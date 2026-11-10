@@ -1,85 +1,82 @@
-# ReConnect — パケ止まり自動再接続アプリ (Android)
+# ReConnect — パケ止まりを見張って、自動で回線を入れ直す
 
-「アンテナは立っているのに通信できない」「電波が悪くなって戻らない」状態を検知すると、
-モバイル回線を自動で**再接続**する Android アプリです。
+「アンテナは立っているのに通信できない」「電波が悪くなったまま戻らない」。
+そんな状態を **ReConnect** が見つけて、モバイル回線を自動で**つなぎ直し**ます。
+電波の強さはアプリとホーム画面ウィジェットの**メーター**でひと目でわかります。
 
-## しくみ
+<p>
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_light.png" width="250" alt="ホーム（ライト）">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_dark.png" width="250" alt="ホーム（ダーク）">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_history_light.png" width="250" alt="履歴">
+</p>
 
-常駐サービス（通知に表示）が、一定の間隔で次の順に回線をチェックします。
+### ホーム画面ウィジェット「電波メーター」
 
-| チェック | 内容 |
+<p>
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_small_light.png" width="240" alt="ウィジェット 2×2">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_wide_dark.png" width="410" alt="ウィジェット 横長">
+</p>
+
+- **2×2**：電波品質メーター（0〜100）と状態
+- **横に広げる**：状態・通信会社・応答速度・今日の復旧回数・**「今すぐ再接続」ボタン**
+- Android 12 以降は壁紙の色（Material You）に、ダークモードにも自動で合わせます
+- 監視をオフにしていても、メーターは電波を表示します
+
+## できること
+
+| | |
 |---|---|
-| 休止条件 | 機内モード中・モバイルデータOFF・Wi-Fi接続中のときは何もしない |
-| モバイル回線 | インターネットに使えるモバイル回線があるか |
-| 疎通確認 | モバイル回線経由で `https://www.google.com/generate_204` に HTTP で到達できるか（**パケ止まり検出の本命**） |
-| 電波（任意） | RSRP が閾値（初期値 -120 dBm）より弱いか |
+| 🛰 **パケ止まりの検知** | モバイル回線経由で `generate_204` に小さな通信を送り、届かない状態が続いたら異常と判断 |
+| 🔁 **自動で再接続** | ① モバイルデータ OFF→ON → ② だめなら機内モード ON→OFF |
+| 🧯 **やりすぎ防止** | 再接続後は待ち時間を入れ、失敗するたびに倍々に延長（最大30分）。1時間あたりの回数にも上限。途中で止めても無線を切ったままにしない |
+| 📈 **電波品質の推移** | 直近1時間の推移グラフに、疎通NG（赤い点）と再接続（青い破線）を表示 |
+| 🗂 **履歴と統計** | 今日の再接続回数・成功率・異常検知・正常率、日ごとのタイムライン |
+| ⚙️ **細かな設定** | チェック間隔、判定回数、電波が弱いときも再接続（RSRP 閾値）、待ち時間、上限 |
+| 🔔 **通知とタイル** | 通知から「今すぐ再接続」「停止」。クイック設定タイルで監視の ON/OFF |
+| ♿ **使いやすさ** | ダークモード、Material You、メーターやグラフに読み上げ用の説明、触覚フィードバック |
 
-異常が **N 回連続**（初期値 2 回 ＝ 約 30 秒）で続くと再接続します。
-
-1. **Step1**: モバイルデータ OFF → ON（`svc data`）
-2. **Step2**: それでも直らなければ機内モード ON → OFF（`cmd connectivity airplane-mode`）
-
-### 再接続を連打しないための制御
-
-機内モードの切り替えを繰り返すと、障害時はかえって繋がりにくくなる場合があります。そのため次の制限を入れています。
-
-- 再接続のあとは待ち時間を設ける（初期値 60 秒。**失敗が続くと倍々に延長**、最大 30 分）
-- 1 時間あたりの再接続回数に上限を設ける（初期値 6 回）
-- 処理の途中で止めても、モバイルデータOFFや機内モードONのまま放置しない
+Wi-Fi・機内モード・モバイルデータ OFF の間は、監視を自動で休みます。
 
 ## 必要なもの
 
 Android 10 以上。普通のアプリには機内モードやモバイルデータを切り替える権限がないため、次のどちらかが必要です。
 
-- **[Shizuku](https://shizuku.rikka.app/)**（推奨・root 不要）。Android 11 以降なら「ワイヤレスデバッグ」で端末だけで起動できます。
-  ただし端末を**再起動するたびに Shizuku の起動し直し**が必要です（root 端末を除く）。
+- **[Shizuku](https://shizuku.rikka.app/)**（おすすめ・root 不要）— Android 11 以降なら「ワイヤレスデバッグ」で端末だけで起動できます。端末を再起動したら Shizuku の「開始」をもう一度押してください。
 - **root**（Shizuku が使えないときは `su` で実行します）
 
-## インストール
+## はじめかた
 
-1. GitHub の **Actions** → 最新の「Build APK」→ **Artifacts** の `ReConnect-apk` をダウンロードして解凍します。
-   - `v0.1.0` のようなタグを push すると、**Releases** に APK が添付されます（スマホから直接ダウンロードしやすい）。
-2. スマホで APK を開いてインストールします（「提供元不明のアプリ」を許可）。
-3. アプリで上から順に設定します。
-   1. 「Shizuku の権限を許可」
-   2. 「通知・電話状態の権限を許可」
-   3. 「電池の最適化から除外」（画面OFF中に監視が止まりにくくなります）
-   4. 「自動再接続を有効にする」をON
-4. まず「今すぐ再接続」を押して、モバイルデータが一瞬切れて戻ることを確かめてください。
+1. Shizuku をインストールして起動します（Shizuku アプリの案内に沿ってワイヤレスデバッグでペアリング → 開始）。
+2. ReConnect の APK をインストールします。
+   - GitHub の **Actions** → 最新の「Build APK」→ Artifacts の `ReConnect-apk`
+   - または `v1.0.0` などのタグを push すると **Releases** に APK が添付されます
+3. アプリのホームに出る「**はじめに**」の 3 ステップを済ませます（Shizuku・通知と電話の状態・電池の最適化）。
+4. Wi-Fi をオフにして「**今すぐ再接続**」を押し、モバイルデータが一瞬切れて戻ることを確かめます。
+5. 「**自動再接続**」をオンにすれば完了です。ホーム画面に「電波メーター」ウィジェットを置くのがおすすめです。
 
-## 設定
-
-| 項目 | 初期値 | 説明 |
-|---|---|---|
-| チェック間隔 | 15 秒 | 短いほど早く気づくが電池を使う |
-| 連続異常回数 | 2 回 | この回数続いたら再接続 |
-| 電波弱でも再接続 | OFF | ON にすると疎通 OK でも RSRP が閾値未満なら再接続（電波が本当に弱い場所では意味がないことが多い） |
-| RSRP 閾値 | -120 dBm | 目安：-80 以上=強い、-100 前後=普通、-110 以下=弱い |
-| 再接続後の待ち時間 | 60 秒 | 失敗するたびに倍々で延長 |
-| 1 時間の上限 | 6 回 | |
-| 機内モードも試す | ON | |
-
-## ビルド
+## 開発
 
 ```sh
-./gradlew assembleDebug
-# → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease        # R8 で最適化した APK（約2MB）
+./gradlew assembleDebug          # デバッグ版
+./gradlew recordPaparazziDebug   # 画面とウィジェットのスクリーンショットを撮り直す（端末不要）
 ```
 
-`app/debug.keystore` は、CI とローカルのどちらでビルドしても同じ署名になるように同梱しているデバッグ用の鍵です（上書きインストールできるようにするため）。秘密の鍵ではありません。
-
-## 構成
+- UI は Jetpack Compose + Material 3。ウィジェットは RemoteViews で、メーターは Canvas でビットマップに描いています（アプリ内のメーターと同じデザイン）。
+- `app/debug.keystore` は、CI とローカルのどちらでビルドしても同じ署名にして上書きインストールできるようにするための鍵です（秘密の鍵ではありません）。
 
 ```
 app/src/main/java/io/github/snowiris57/reconnect/
-├── MainActivity.kt    画面（権限・状態・設定・ログ）
-├── MonitorService.kt  常駐監視・判定・再接続の手順・待ち時間の制御
-├── NetCheck.kt        電波（RSRP/レベル/方式）と疎通確認
-├── Shell.kt           Shizuku UserService / su でコマンドを実行・無線操作
-├── ShellService.kt    shell 権限プロセス側（Shizuku UserService）
-├── MonitorState.kt    状態とログ（files/events.log）
-├── Prefs.kt           設定
-└── BootReceiver.kt    端末起動時に自動開始
+├── MainActivity.kt         Compose 画面の入口・権限の要求
+├── MonitorService.kt       常駐監視・判定・再接続の手順・やりすぎ防止
+├── NetCheck.kt             電波（RSRP / 品質 / 方式 / 通信会社）と疎通確認
+├── MonitorState.kt         状態・計測サンプル・イベント履歴・統計
+├── Shell.kt / ShellService.kt  Shizuku UserService（または su）で特権コマンドを実行
+├── MonitorTileService.kt   クイック設定タイル
+├── BootReceiver.kt         起動時の自動開始
+├── Prefs.kt                設定
+├── widget/                 電波メーターのウィジェット（MeterWidget / GaugeBitmap）
+└── ui/                     テーマ・メーター・グラフ・ホーム / 履歴 / 設定画面
 ```
 
 ## 参考にしたプロジェクト

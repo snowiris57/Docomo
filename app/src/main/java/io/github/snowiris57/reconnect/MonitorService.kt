@@ -13,6 +13,7 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import io.github.snowiris57.reconnect.widget.MeterWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,9 +26,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 常駐して回線を監視し、パケ止まりや電波劣化を検知したら再接続する。
@@ -49,11 +47,13 @@ class MonitorService : Service() {
     private var backoffSec = 0
     private var lastNotified = ""
 
-    private sealed class Verdict(val text: String) {
-        class Ok(text: String) : Verdict(text)
-        class Skip(text: String) : Verdict(text)
-        class Bad(text: String) : Verdict(text)
-    }
+    private data class Check(
+        val health: Health,
+        val headline: String,
+        val detail: String,
+        val signal: SignalInfo?,
+        val probe: ProbeResult?,
+    )
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -66,7 +66,7 @@ class MonitorService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildNotification("起動中…"),
+            buildNotification("起動しています…"),
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0,
         )
     }
@@ -94,13 +94,17 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
-        MonitorState.status.update { it.copy(running = false, state = "停止") }
+        if (loopJob != null) MonitorState.event(EventType.STOP, "監視を停止しました")
+        MonitorState.status.update {
+            it.copy(running = false, health = Health.STOPPED, headline = "監視は停止中です", detail = "", badCount = 0)
+        }
+        MeterWidget.updateAll(this)
         super.onDestroy()
     }
 
     private fun startLoopIfNeeded() {
         if (loopJob?.isActive == true) return
-        MonitorState.log("監視を開始")
+        MonitorState.event(EventType.START, "監視を開始しました")
         MonitorState.status.update { it.copy(running = true) }
         loopJob = scope.launch { loop() }
     }
@@ -110,58 +114,90 @@ class MonitorService : Service() {
         while (scope.isActive) {
             val p = Prefs(this)
             if (!recoverLock.isLocked) {
-                val v = evaluate(p)
-                bad = if (v is Verdict.Bad) bad + 1 else 0
-                MonitorState.status.update {
-                    it.copy(running = true, state = v.text, badCount = bad, failThreshold = p.failThreshold)
-                }
+                val c = check(p)
+                bad = if (c.health == Health.BAD) bad + 1 else 0
+                MonitorState.addSample(
+                    Sample(
+                        time = System.currentTimeMillis(),
+                        rsrp = c.signal?.rsrp,
+                        quality = c.signal?.quality,
+                        latencyMs = c.probe?.takeIf { it.ok }?.ms,
+                        ok = c.probe?.ok ?: if (c.health == Health.BAD) false else null,
+                        health = c.health,
+                    )
+                )
 
-                if (bad >= p.failThreshold) {
-                    val wait = waitReason(p)
-                    if (wait == null) {
-                        recover(p, v.text, manual = false)
-                        bad = 0
-                    } else {
-                        MonitorState.status.update { it.copy(state = "${v.text}（$wait）") }
+                var detail = c.detail
+                var shouldRecover = false
+                if (c.health == Health.BAD) {
+                    detail = "$detail（${bad}/${p.failThreshold}）"
+                    if (bad == p.failThreshold) MonitorState.event(EventType.DETECT, "異常を検知: ${c.detail}")
+                    if (bad >= p.failThreshold) {
+                        val wait = waitReason(p)
+                        if (wait == null) shouldRecover = true else detail = "$detail ・ $wait"
                     }
                 }
-                updateNotification()
+                publish(c.copy(detail = detail), bad, p)
+
+                if (shouldRecover) {
+                    recover(p, c.detail, manual = false)
+                    bad = 0
+                }
             }
             delay(p.intervalSec * 1000L)
         }
     }
 
-    private suspend fun evaluate(p: Prefs): Verdict {
-        if (NetCheck.airplaneModeOn(this)) return Verdict.Skip("機内モード中のため休止")
-        if (!NetCheck.mobileDataEnabled(this)) return Verdict.Skip("モバイルデータOFFのため休止")
-        if (NetCheck.onWifi(this)) return Verdict.Skip("Wi-Fi 接続中のため休止")
-
+    private suspend fun check(p: Prefs): Check {
+        if (NetCheck.airplaneModeOn(this)) {
+            return Check(Health.PAUSED, "機内モード中", "機内モードの間は監視を休みます", null, null)
+        }
         val sig = NetCheck.signal(this)
-        MonitorState.status.update { it.copy(signal = sig.describe()) }
-
-        val cell = NetCheck.cellularNetwork(this)
-        if (cell == null) {
-            MonitorState.status.update { it.copy(probe = "-") }
-            return Verdict.Bad("モバイル回線なし")
+        if (!NetCheck.mobileDataEnabled(this)) {
+            return Check(Health.PAUSED, "モバイルデータがオフ", "オンになると監視を再開します", sig, null)
+        }
+        if (NetCheck.onWifi(this)) {
+            return Check(Health.PAUSED, "Wi-Fi に接続中", "Wi-Fi の間はモバイル回線の監視を休みます", sig, null)
         }
 
+        val cell = NetCheck.cellularNetwork(this)
+            ?: return Check(Health.BAD, "通信に問題があります", "モバイル回線が見つかりません", sig, null)
+
         val probe = NetCheck.probe(cell)
-        MonitorState.status.update { it.copy(probe = probe.describe()) }
-        if (!probe.ok) return Verdict.Bad("疎通NG（パケ止まりの疑い）")
+        if (!probe.ok) {
+            return Check(Health.BAD, "通信に問題があります", "応答なし — パケ止まりの疑い", sig, probe)
+        }
 
         val rsrp = sig.rsrp
         if (p.signalTrigger && rsrp != null && rsrp < p.rsrpThreshold) {
-            return Verdict.Bad("電波弱 (RSRP $rsrp < ${p.rsrpThreshold})")
+            return Check(Health.BAD, "電波が弱くなっています", "RSRP $rsrp dBm（閾値 ${p.rsrpThreshold}）", sig, probe)
         }
-        return Verdict.Ok("正常")
+        return Check(Health.OK, "通信は安定しています", "${p.intervalSec}秒ごとに見守っています", sig, probe)
+    }
+
+    private fun publish(c: Check, bad: Int, p: Prefs) {
+        MonitorState.status.update {
+            it.copy(
+                running = true,
+                health = c.health,
+                headline = c.headline,
+                detail = c.detail,
+                signal = c.signal ?: it.signal,
+                probe = c.probe,
+                badCount = bad,
+                failThreshold = p.failThreshold,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        refreshSurfaces()
     }
 
     /** 再接続を今は控えるべき理由。null なら実行可 */
     private fun waitReason(p: Prefs): String? {
         val now = SystemClock.elapsedRealtime()
         while (recoveryTimes.isNotEmpty() && now - recoveryTimes.first() > 3_600_000) recoveryTimes.removeFirst()
-        if (recoveryTimes.size >= p.maxPerHour) return "1時間の上限 ${p.maxPerHour} 回に到達"
-        if (now < nextAllowedAt) return "クールダウン中 残り${(nextAllowedAt - now) / 1000}秒"
+        if (recoveryTimes.size >= p.maxPerHour) return "1時間の上限（${p.maxPerHour}回）に到達"
+        if (now < nextAllowedAt) return "待機中 あと${(nextAllowedAt - now) / 1000}秒"
         return null
     }
 
@@ -169,11 +205,13 @@ class MonitorService : Service() {
         if (!recoverLock.tryLock()) return false
         try {
             if (NetCheck.airplaneModeOn(this)) {
-                MonitorState.log("機内モード中なので再接続しません")
+                MonitorState.event(EventType.INFO, "機内モード中のため再接続しませんでした")
                 return false
             }
-            MonitorState.log("再接続開始: $reason")
-            setState("再接続中…")
+            MonitorState.event(
+                EventType.RECOVER_START,
+                if (manual) "手動で再接続を開始" else "自動で再接続を開始（$reason）",
+            )
 
             val ok = runRecoverySteps(p)
 
@@ -182,17 +220,13 @@ class MonitorService : Service() {
             backoffSec = if (ok) p.cooldownSec else (backoffSec * 2).coerceIn(p.cooldownSec, 1800)
             nextAllowedAt = now + backoffSec * 1000L
 
-            val time = SimpleDateFormat("HH:mm:ss", Locale.JAPAN).format(Date())
-            MonitorState.status.update {
-                it.copy(
-                    recoveries = it.recoveries + 1,
-                    lastRecovery = "$time ${if (ok) "成功" else "失敗"}",
-                    state = if (ok) "正常（再接続済み）" else "再接続失敗",
-                    badCount = 0,
-                )
+            if (ok) {
+                MonitorState.event(EventType.RECOVER_OK, "通信が復旧しました")
+                setHealth(Health.OK, "通信が復旧しました", "再接続に成功")
+            } else {
+                MonitorState.event(EventType.RECOVER_FAIL, "復旧できませんでした（次の再接続まで${backoffSec}秒）")
+                setHealth(Health.BAD, "再接続に失敗しました", "${backoffSec}秒後に再挑戦します")
             }
-            MonitorState.log(if (ok) "復旧しました" else "復旧できませんでした（次回まで ${backoffSec}秒）")
-            updateNotification()
             return ok
         } finally {
             recoverLock.unlock()
@@ -203,10 +237,11 @@ class MonitorService : Service() {
         var dataOff = false
         var airplaneOn = false
         try {
-            MonitorState.log("Step1: モバイルデータ OFF → ON")
+            setHealth(Health.RECOVERING, "再接続しています…", "モバイルデータを入れ直しています")
+            MonitorState.event(EventType.STEP, "Step 1: モバイルデータ OFF → ON")
             val r = Radio.setMobileData(false)
             if (!r.ok) {
-                MonitorState.log("コマンド失敗: ${r.output}")
+                MonitorState.event(EventType.ERROR, "操作できませんでした: ${r.output}")
                 return false
             }
             dataOff = true
@@ -216,10 +251,11 @@ class MonitorService : Service() {
             if (waitHealthy(25_000)) return true
 
             if (!p.useAirplane) return false
-            MonitorState.log("Step2: 機内モード ON → OFF")
+            setHealth(Health.RECOVERING, "再接続しています…", "機内モードで電波をつかみ直しています")
+            MonitorState.event(EventType.STEP, "Step 2: 機内モード ON → OFF")
             val r2 = Radio.setAirplaneMode(true)
             if (!r2.ok) {
-                MonitorState.log("コマンド失敗: ${r2.output}")
+                MonitorState.event(EventType.ERROR, "操作できませんでした: ${r2.output}")
                 return false
             }
             airplaneOn = true
@@ -249,14 +285,25 @@ class MonitorService : Service() {
         return false
     }
 
-    private fun setState(s: String) {
-        MonitorState.status.update { it.copy(state = s) }
+    private fun setHealth(health: Health, headline: String, detail: String) {
+        MonitorState.status.update {
+            it.copy(health = health, headline = headline, detail = detail, badCount = 0, updatedAt = System.currentTimeMillis())
+        }
+        refreshSurfaces()
+    }
+
+    private fun refreshSurfaces() {
         updateNotification()
+        MeterWidget.updateAll(this)
     }
 
     private fun updateNotification() {
         val st = MonitorState.status.value
-        val text = "${st.state} ・ ${st.signal}"
+        val text = listOfNotNull(
+            st.headline,
+            st.signal?.short(),
+            st.probe?.takeIf { it.ok }?.let { "${it.ms}ms" },
+        ).joinToString(" ・ ")
         if (text == lastNotified) return
         lastNotified = text
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
@@ -264,15 +311,13 @@ class MonitorService : Service() {
 
     private fun buildNotification(text: String) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle("回線監視中")
+        .setContentTitle("回線を見守っています")
         .setContentText(text)
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
-        .setContentIntent(
-            PendingIntent.getActivity(
-                this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-            )
-        )
+        .setShowWhen(false)
+        .setContentIntent(openAppIntent(this))
         .addAction(0, "今すぐ再接続", servicePendingIntent(ACTION_RECONNECT, 1))
         .addAction(0, "停止", servicePendingIntent(ACTION_STOP, 2))
         .build()
@@ -284,9 +329,9 @@ class MonitorService : Service() {
     companion object {
         private const val CHANNEL_ID = "monitor"
         private const val NOTIFICATION_ID = 1
-        private const val ACTION_START = "start"
-        private const val ACTION_STOP = "stop"
-        private const val ACTION_RECONNECT = "reconnect"
+        private const val ACTION_START = "io.github.snowiris57.reconnect.START"
+        private const val ACTION_STOP = "io.github.snowiris57.reconnect.STOP"
+        private const val ACTION_RECONNECT = "io.github.snowiris57.reconnect.RECONNECT"
 
         fun start(ctx: Context) = ContextCompat.startForegroundService(
             ctx, Intent(ctx, MonitorService::class.java).setAction(ACTION_START)
@@ -298,6 +343,18 @@ class MonitorService : Service() {
 
         fun reconnectNow(ctx: Context) = ContextCompat.startForegroundService(
             ctx, Intent(ctx, MonitorService::class.java).setAction(ACTION_RECONNECT)
+        )
+
+        /** ウィジェットのボタン用 */
+        fun reconnectPendingIntent(ctx: Context): PendingIntent = PendingIntent.getForegroundService(
+            ctx, 10, Intent(ctx, MonitorService::class.java).setAction(ACTION_RECONNECT),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        fun openAppIntent(ctx: Context): PendingIntent = PendingIntent.getActivity(
+            ctx, 0,
+            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE,
         )
     }
 }

@@ -20,11 +20,32 @@ data class SignalInfo(
     /** LTE の RSRP（NSA 5G でもアンカーの LTE を優先）。無ければ NR の SS-RSRP */
     val rsrp: Int?,
     val type: String,
+    val carrier: String = "",
 ) {
+    /** 0.0〜1.0 の電波品質。RSRP -140dBm → 0、-80dBm → 1 */
+    val quality: Float?
+        get() = rsrp?.let { ((it + 140) / 60f).coerceIn(0f, 1f) } ?: level?.let { it / 4f }
+
+    fun short(): String = buildString {
+        append(type)
+        rsrp?.let { append(" $it dBm") }
+    }
+
     fun describe(): String = buildString {
         append(type)
         level?.let { append(" / レベル $it/4") }
         rsrp?.let { append(" / RSRP $it dBm") }
+    }
+
+    companion object {
+        /** RSRP の目安を言葉で */
+        fun rsrpLabel(rsrp: Int): String = when {
+            rsrp >= -85 -> "とても強い"
+            rsrp >= -100 -> "良好"
+            rsrp >= -110 -> "普通"
+            rsrp >= -120 -> "弱い"
+            else -> "とても弱い"
+        }
     }
 }
 
@@ -94,7 +115,12 @@ object NetCheck {
             -1 -> if (nr != null) "5G" else if (lte != null) "LTE" else "?"
             else -> "3G/その他"
         }
-        return SignalInfo(ss?.level, lte ?: nr, type)
+        val carrier = try {
+            tm.networkOperatorName.orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+        return SignalInfo(ss?.level, lte ?: nr, type, carrier)
     }
 
     /** 指定ネットワーク経由で実際に HTTP が通るか（パケ止まり検出の本命） */

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ReConnect</string>
-    <string name="channel_name">回線監視</string>
+    <string name="channel_name">回線の見守り</string>
+    <string name="widget_name">電波メーター</string>
+    <string name="widget_desc">電波の強さをメーターで表示。横に広げると状態と再接続ボタンも出ます</string>
 </resources>

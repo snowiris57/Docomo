@@ -4,16 +4,26 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- アンテナバー -->
-    <path android:fillColor="#FFFFFF" android:pathData="M32,70h7v8h-7z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M42,62h7v16h-7z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M52,54h7v24h-7z" />
-    <!-- 再接続の矢印 -->
+    <!-- メーターのトラック -->
     <path
         android:fillColor="#00000000"
+        android:pathData="M38.44,69.56 A22,22 0 1,1 69.56,69.56"
+        android:strokeAlpha="0.35"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="5"
         android:strokeLineCap="round"
-        android:pathData="M76,44a12,12 0,1 1,-6 -10.4" />
-    <path android:fillColor="#FFFFFF" android:pathData="M64,26l12,2l-6,10z" />
+        android:strokeWidth="6" />
+    <!-- 値（80%） -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M38.44,69.56 A22,22 0 1,1 75.73,50.56"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M75.73,50.56m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+    <!-- アンテナ -->
+    <path android:fillColor="#FFFFFF" android:pathData="M45,57.5h4.5v7h-4.5z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M51.75,52h4.5v12.5h-4.5z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M58.5,46h4.5v18.5h-4.5z" />
 </vector>
