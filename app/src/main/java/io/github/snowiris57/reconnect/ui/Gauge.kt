@@ -35,7 +35,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
@@ -58,7 +60,11 @@ fun SignalGauge(
     modifier: Modifier = Modifier,
     recovering: Boolean = false,
     celebrateKey: Long = 0L,
+    /** 単位の下に出す追加の1行（Wi-Fi のリンク速度など） */
+    extra: String? = null,
 ) {
+    val textMeasurer = rememberTextMeasurer()
+    val scaleStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     val target = quality?.coerceIn(0f, 1f) ?: 0f
     val animated by animateFloatAsState(
         targetValue = target,
@@ -103,8 +109,9 @@ fun SignalGauge(
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val stroke = size.minDimension * 0.075f
-            val inset = stroke / 2 + size.minDimension * 0.03f
+            val stroke = size.minDimension * 0.07f
+            // 外側に目盛りの数字を置く余白
+            val inset = stroke / 2 + size.minDimension * 0.085f
             val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
             val topLeft = Offset(inset, inset)
             val r = arcSize.width / 2
@@ -130,15 +137,31 @@ fun SignalGauge(
 
             drawArc(track, 135f, 270f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
 
-            for (i in 0..8) {
-                val a = Math.toRadians(135.0 + 270.0 * i / 8)
-                val r1 = r - stroke * 1.0f
-                val r2 = r - stroke * 1.45f
+            // 目盛りの数字（0・25・50・75・100）を弧の外側に
+            for (k in 0..4) {
+                val a = Math.toRadians(135.0 + 270.0 * k / 4)
+                val rr = r + stroke * 1.25f
+                val label = textMeasurer.measure("${k * 25}", scaleStyle)
+                drawText(
+                    label,
+                    topLeft = center + Offset(
+                        (rr * cos(a)).toFloat() - label.size.width / 2f,
+                        (rr * sin(a)).toFloat() - label.size.height / 2f,
+                    ),
+                )
+            }
+
+            // 目盛り: 5 ごとに細かく、25 ごとに長く
+            for (i in 0..20) {
+                val major = i % 5 == 0
+                val a = Math.toRadians(135.0 + 270.0 * i / 20)
+                val r1 = r - stroke * 0.95f
+                val r2 = r - stroke * (if (major) 1.6f else 1.25f)
                 drawLine(
                     tick,
                     center + Offset((r1 * cos(a)).toFloat(), (r1 * sin(a)).toFloat()),
                     center + Offset((r2 * cos(a)).toFloat(), (r2 * sin(a)).toFloat()),
-                    strokeWidth = size.minDimension * 0.008f,
+                    strokeWidth = size.minDimension * (if (major) 0.009f else 0.005f),
                     cap = StrokeCap.Round,
                 )
             }
@@ -193,8 +216,8 @@ fun SignalGauge(
             )
             Text(
                 text = percent?.let { "${(animated * 100).roundToInt()}" } ?: "—",
-                fontSize = 64.sp,
-                lineHeight = 64.sp,
+                fontSize = 58.sp,
+                lineHeight = 58.sp,
                 fontWeight = FontWeight.Bold,
                 // 数字が変わっても幅が揺れないよう等幅数字
                 style = MaterialTheme.typography.displayLarge.copy(fontFeatureSettings = "tnum"),
@@ -206,6 +229,13 @@ fun SignalGauge(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (extra != null && !recovering) {
+                Text(
+                    extra,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
     }
 }

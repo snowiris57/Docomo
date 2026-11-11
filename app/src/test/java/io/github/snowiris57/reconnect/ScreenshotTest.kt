@@ -168,7 +168,7 @@ class ScreenshotTest {
             sizePx = 400,
             quality = if (wifi) Quality.combined(tether.quality, slowProbe) else sig.quality,
             value = if (wifi) "${((Quality.combined(tether.quality, slowProbe) ?: 0f) * 100).toInt()}" else "72",
-            unit = if (wifi) "-24 dBm" else "-97 dBm",
+            unit = if (wifi) "-24 dBm ・ 77 Mbps" else "-97 dBm",
             caption = if (wifi) tether.caption else "5G NSA",
             palette = GaugeBitmap.Palette(
                 track = ctx.getColor(R.color.widget_track), text = ctx.getColor(R.color.widget_text),

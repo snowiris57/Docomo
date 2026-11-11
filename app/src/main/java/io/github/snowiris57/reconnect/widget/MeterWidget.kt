@@ -116,7 +116,7 @@ class MeterWidget : AppWidgetProvider() {
             sizePx = (150 * ctx.resources.displayMetrics.density).roundToInt().coerceIn(200, 480),
             quality = snap.quality,
             value = snap.quality?.let { "${(it * 100).roundToInt()}" } ?: "—",
-            unit = snap.dbm?.let { "$it dBm" } ?: "電波なし",
+            unit = snap.dbm?.let { d -> "$d dBm" + (snap.wifi?.speedText?.takeIf { snap.route == Route.WIFI }?.let { " ・ $it" } ?: "") } ?: "電波なし",
             caption = if (snap.route == Route.WIFI) snap.wifi?.caption ?: "Wi-Fi" else snap.signal?.type ?: "",
             palette = GaugeBitmap.Palette(
                 track = ContextCompat.getColor(ctx, R.color.widget_track),

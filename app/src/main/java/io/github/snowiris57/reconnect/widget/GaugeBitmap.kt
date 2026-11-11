@@ -34,8 +34,9 @@ object GaugeBitmap {
         val s = sizePx.toFloat()
         val cx = s / 2
         val cy = s / 2
-        val stroke = s * 0.085f
-        val inset = stroke / 2 + s * 0.04f
+        val stroke = s * 0.075f
+        // 外側に目盛りの数字を置く余白
+        val inset = stroke / 2 + s * 0.085f
         val rect = RectF(inset, inset, s - inset, s - inset)
         val r = rect.width() / 2
 
@@ -55,10 +56,26 @@ object GaugeBitmap {
             color = palette.sub
             alpha = 90
         }
-        for (i in 0..8) {
-            val a = Math.toRadians(135.0 + 270.0 * i / 8)
+        // 目盛りの数字（0・25・50・75・100）
+        val scale = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = s * 0.052f
+            color = palette.sub
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        for (k in 0..4) {
+            val a = Math.toRadians(135.0 + 270.0 * k / 4)
+            val rr = r + stroke * 1.3f
+            c.drawText("${k * 25}", cx + rr * cos(a).toFloat(), cy + rr * sin(a).toFloat() + scale.textSize * 0.35f, scale)
+        }
+
+        // 目盛り: 5 ごとに細かく、25 ごとに長く
+        for (i in 0..20) {
+            val major = i % 5 == 0
+            val a = Math.toRadians(135.0 + 270.0 * i / 20)
             val r1 = r - stroke * 0.95f
-            val r2 = r - stroke * 1.35f
+            val r2 = r - stroke * (if (major) 1.6f else 1.25f)
+            tick.strokeWidth = s * (if (major) 0.009f else 0.005f)
             c.drawLine(
                 cx + r1 * cos(a).toFloat(), cy + r1 * sin(a).toFloat(),
                 cx + r2 * cos(a).toFloat(), cy + r2 * sin(a).toFloat(), tick,
@@ -101,7 +118,7 @@ object GaugeBitmap {
 
         center.apply {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = s * 0.25f
+            textSize = s * 0.23f
             color = palette.text
         }
         val valueWidth = center.measureText(value)
@@ -114,10 +131,11 @@ object GaugeBitmap {
 
         center.apply {
             typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-            textSize = s * 0.072f
+            textSize = s * 0.068f
             color = palette.sub
         }
-        c.drawText(unit, cx, cy + s * 0.19f, center)
+        center.measureText(unit).let { w -> if (w > s * 0.44f) center.textSize *= s * 0.44f / w }
+        c.drawText(unit, cx, cy + s * 0.18f, center)
         return bmp
     }
 

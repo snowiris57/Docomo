@@ -88,9 +88,20 @@ data class WifiReading(
     /** メーター上の小見出し（例: "テザリング ・ 5GHz"） */
     val caption: String get() = "${if (tethering) "テザリング" else "Wi-Fi"} ・ $band"
 
-    fun short(): String = "Wi-Fi $band $rssi dBm"
+    fun short(): String = "Wi-Fi $band $rssi dBm" + (linkMbps?.let { " ${formatSpeed(it)}" } ?: "")
+
+    /** 例: "77 Mbps"、"1.2 Gbps" */
+    val speedText: String? get() = linkMbps?.let { formatSpeed(it) }
 
     companion object {
+        /** 1000 Mbps 以上は Gbps で表す */
+        fun formatSpeed(mbps: Int): String = speedParts(mbps).let { (v, u) -> "$v $u" }
+
+        /** 数値と単位に分ける（例: "1.2" と "Gbps"） */
+        fun speedParts(mbps: Int): Pair<String, String> =
+            if (mbps >= 1000) String.format(java.util.Locale.US, "%.1f", mbps / 1000.0).removeSuffix(".0") to "Gbps"
+            else "$mbps" to "Mbps"
+
         fun rssiLabel(rssi: Int): String = when {
             rssi >= -50 -> "とても強い"
             rssi >= -60 -> "良好"

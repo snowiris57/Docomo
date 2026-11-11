@@ -277,6 +277,7 @@ private fun HeroCard(
                     quality = Quality.combined(wifi?.quality, probe),
                     caption = wifi?.let { w -> w.caption + (w.channel?.let { " ・ ch$it" } ?: "") } ?: "Wi-Fi",
                     unit = wifi?.let { "${it.rssi} dBm ・ ${latencyText ?: WifiReading.rssiLabel(it.rssi)}" } ?: "Wi-Fi に未接続",
+                    extra = wifi?.speedText?.let { sp -> sp + (wifi.standard?.let { " ・ $it" } ?: "") },
                     recovering = recovering,
                     celebrateKey = lastRecovery,
                     modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
@@ -330,10 +331,11 @@ private fun HeroCard(
                                 "ms",
                                 Modifier.weight(1f),
                             )
+                            val speed = wifi?.linkMbps?.let { WifiReading.speedParts(it) }
                             MetricTile(
-                                wifi?.standard ?: "リンク速度",
-                                wifi?.linkMbps?.toString() ?: "—",
-                                "Mbps",
+                                "リンク速度",
+                                speed?.first ?: "—",
+                                speed?.second ?: "",
                                 Modifier.weight(1f),
                             )
                         }
