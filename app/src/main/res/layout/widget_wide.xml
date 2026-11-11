@@ -74,9 +74,11 @@
                 android:fontFamily="sans-serif-medium"
                 android:text="—"
                 android:textColor="@color/widget_text"
-                android:textSize="18sp" />
+                android:textSize="17sp" />
 
             <TextView
+                android:id="@+id/latency_label"
+                android:maxLines="1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="2dp"
@@ -88,14 +90,15 @@
                 android:id="@+id/recoveries"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
+                android:layout_marginStart="10dp"
                 android:fontFamily="sans-serif-medium"
                 android:text="0"
                 android:textColor="@color/widget_text"
-                android:textSize="18sp" />
+                android:textSize="17sp" />
 
             <TextView
                 android:id="@+id/recoveries_label"
+                android:maxLines="1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="2dp"

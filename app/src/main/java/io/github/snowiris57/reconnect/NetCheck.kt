@@ -12,6 +12,8 @@ import android.telephony.TelephonyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.URL
 
 data class SignalInfo(
@@ -99,12 +101,41 @@ data class WifiReading(
     }
 }
 
-data class ProbeResult(val ok: Boolean, val ms: Long, val error: String? = null) {
+/**
+ * 疎通チェックの結果。
+ * [ms] はインターネットまでの往復時間（ping に近い値。TCP の接続にかかった時間）。
+ * [hopMs] は Wi-Fi 区間（スマホ ↔ ルーター/iPhone）の往復時間。Wi-Fi のときだけ。
+ */
+data class ProbeResult(
+    val ok: Boolean,
+    val ms: Long,
+    val error: String? = null,
+    val hopMs: Long? = null,
+) {
     fun describe(): String = if (ok) "OK (${ms}ms)" else "NG (${error ?: "不明"})"
 }
 
+/** 電波と応答時間から「通信品質」（0〜1）を出す */
+object Quality {
+    /** 応答時間の点数。60ms 以下で満点、800ms で ほぼ 0 */
+    fun latency(ms: Long): Float {
+        if (ms <= 60) return 1f
+        val q = 1f - (kotlin.math.ln(ms / 60.0) / kotlin.math.ln(800 / 60.0)).toFloat() * 0.95f
+        return q.coerceIn(0.05f, 1f)
+    }
+
+    /** 電波が強くても、応答が遅ければ低くなる（弱い方に合わせる） */
+    fun combined(signal: Float?, probe: ProbeResult?): Float? = when {
+        probe == null -> signal
+        !probe.ok -> 0.03f
+        signal == null -> latency(probe.ms)
+        else -> minOf(signal, latency(probe.ms))
+    }
+}
+
 object NetCheck {
-    private const val PROBE_URL = "https://www.google.com/generate_204"
+    private const val PROBE_HOST = "www.google.com"
+    private const val PROBE_URL = "https://$PROBE_HOST/generate_204"
     private const val TIMEOUT_MS = 5_000
 
     fun airplaneModeOn(ctx: Context): Boolean =
@@ -222,9 +253,17 @@ object NetCheck {
     }
 
     /** 指定ネットワーク経由で実際に HTTP が通るか（パケ止まり検出の本命） */
-    suspend fun probe(network: Network): ProbeResult = withContext(Dispatchers.IO) {
+    suspend fun probe(network: Network, measureHop: Boolean = false): ProbeResult = withContext(Dispatchers.IO) {
+        val hop = if (measureHop) hopRtt(network) else null
         val start = System.nanoTime()
         try {
+            // 1) 往復時間: DNS を引いたあと、TCP の接続だけにかかった時間を測る（ping に近い）
+            val addr = network.getAllByName(PROBE_HOST).first()
+            val t = System.nanoTime()
+            network.socketFactory.createSocket().use { it.connect(InetSocketAddress(addr, 443), TIMEOUT_MS) }
+            val rtt = (System.nanoTime() - t) / 1_000_000
+
+            // 2) 本当にインターネットまで通じるか（HTTP の応答が返るか）
             val conn = network.openConnection(URL(PROBE_URL)) as HttpURLConnection
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = TIMEOUT_MS
@@ -232,15 +271,48 @@ object NetCheck {
             conn.instanceFollowRedirects = false
             try {
                 val code = conn.responseCode
-                val ms = (System.nanoTime() - start) / 1_000_000
-                // 何らかの HTTP 応答が返れば回線は生きている
-                ProbeResult(code in 100..599, ms)
+                ProbeResult(code in 100..599, rtt, hopMs = hop)
             } finally {
                 conn.disconnect()
             }
         } catch (e: Exception) {
             val ms = (System.nanoTime() - start) / 1_000_000
-            ProbeResult(false, ms, e.javaClass.simpleName)
+            ProbeResult(false, ms, e.javaClass.simpleName, hopMs = hop)
         }
     }
+
+    /**
+     * Wi-Fi 区間の往復時間。ゲートウェイ（ルーターや iPhone）の 53 番に TCP で接続を試み、
+     * 「つながった」でも「拒否された」でも返事が来るまでの時間を測る。返事が無ければ null。
+     */
+    private fun hopRtt(network: Network): Long? {
+        val gw = gateway(network) ?: return null
+        val t = System.nanoTime()
+        return try {
+            network.socketFactory.createSocket().use { it.connect(InetSocketAddress(gw, 53), 2_000) }
+            (System.nanoTime() - t) / 1_000_000
+        } catch (_: java.net.ConnectException) {
+            (System.nanoTime() - t) / 1_000_000 // 拒否 = 返事は来た
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private var appCtx: Context? = null
+
+    /** ゲートウェイの取得に使う（App で一度だけ設定） */
+    fun init(ctx: Context) {
+        appCtx = ctx.applicationContext
+    }
+
+    private fun gateway(network: Network): InetAddress? {
+        val cm = appCtx?.getSystemService(ConnectivityManager::class.java) ?: return null
+        return cm.getLinkProperties(network)?.routes
+            ?.firstOrNull { it.isDefaultRoute && it.gateway != null && it.gateway !is java.net.Inet6Address }
+            ?.gateway
+    }
+
+    /** 位置情報（GPS）がオンか。オフだと Wi-Fi 名が取れない */
+    fun locationEnabled(ctx: Context): Boolean =
+        ctx.getSystemService(android.location.LocationManager::class.java)?.isLocationEnabled == true
 }

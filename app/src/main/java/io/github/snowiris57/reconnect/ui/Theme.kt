@@ -34,7 +34,8 @@ object SignalColors {
 fun healthColor(h: Health): Color = when (h) {
     Health.OK -> SignalColors.good
     Health.BAD -> SignalColors.bad
-    Health.PAUSED -> SignalColors.warn
+    Health.UNSTABLE -> SignalColors.warn
+    Health.PAUSED -> MaterialTheme.colorScheme.outline
     Health.RECOVERING -> SignalColors.info
     Health.STOPPED -> MaterialTheme.colorScheme.outline
 }
@@ -42,6 +43,7 @@ fun healthColor(h: Health): Color = when (h) {
 fun healthLabel(h: Health): String = when (h) {
     Health.OK -> "正常"
     Health.BAD -> "異常"
+    Health.UNSTABLE -> "不安定"
     Health.PAUSED -> "休止中"
     Health.RECOVERING -> "再接続中"
     Health.STOPPED -> "停止中"

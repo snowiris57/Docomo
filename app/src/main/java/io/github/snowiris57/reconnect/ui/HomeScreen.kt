@@ -68,6 +68,7 @@ import io.github.snowiris57.reconnect.DayStats
 import io.github.snowiris57.reconnect.Event
 import io.github.snowiris57.reconnect.EventType
 import io.github.snowiris57.reconnect.Health
+import io.github.snowiris57.reconnect.Quality
 import io.github.snowiris57.reconnect.R
 import io.github.snowiris57.reconnect.Route
 import io.github.snowiris57.reconnect.Sample
@@ -109,7 +110,7 @@ fun HomeScreen(
 
     // 上段: 状態の把握、下段: 操作と記録
     val primary: LazyListScope.() -> Unit = {
-        item { Header(status, shown, cellNow, wifiNow) }
+        item { Header(status, shown, cellNow, wifiNow, setup, actions) }
         item {
             ModeSwitch(active = live.route, shown = shown) { r ->
                 override = if (r == live.route) null else r
@@ -128,7 +129,7 @@ fun HomeScreen(
                 Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "電波品質の推移",
+                            "通信品質の推移",
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.semantics { heading() },
                         )
@@ -186,7 +187,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header(status: Status, shown: Route, cell: SignalInfo?, wifi: WifiReading?) {
+private fun Header(status: Status, shown: Route, cell: SignalInfo?, wifi: WifiReading?, setup: SetupState, actions: AppActions) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("ReConnect", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
@@ -198,6 +199,19 @@ private fun Header(status: Status, shown: Route, cell: SignalInfo?, wifi: WifiRe
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Wi-Fi 名が取れていないときの案内
+            if (shown == Route.WIFI && wifi != null && wifi.ssid == null) {
+                when {
+                    !setup.locationGranted -> TextButton(
+                        onClick = actions.requestLocation,
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                    ) { Text("Wi-Fi 名を表示する") }
+                    !setup.locationOn -> TextButton(
+                        onClick = actions.openLocationSettings,
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                    ) { Text("位置情報をオンにすると Wi-Fi 名が出ます") }
+                }
+            }
         }
         StatusPill(status.health)
     }
@@ -240,7 +254,10 @@ private fun HeroCard(
 ) {
     val recovering = status.health == Health.RECOVERING && shown == active
     val peeking = shown != active
-    val probeMs = status.probe?.takeIf { it.ok && status.running && status.route == shown }?.ms?.toString() ?: "—"
+    // いま表示している回線の、直近の疎通結果（監視中だけ）
+    val probe = status.probe?.takeIf { status.running && status.route == shown && !peeking }
+    val probeMs = probe?.takeIf { it.ok }?.ms?.toString() ?: "—"
+    val latencyText = probe?.let { if (it.ok) "応答 ${it.ms}ms" else "応答なし" }
 
     SectionCard {
         Column(
@@ -249,17 +266,17 @@ private fun HeroCard(
         ) {
             when (shown) {
                 Route.MOBILE -> SignalGauge(
-                    quality = cell?.quality,
+                    quality = Quality.combined(cell?.quality, probe),
                     caption = cell?.type ?: "モバイル",
-                    unit = cell?.rsrp?.let { "$it dBm ・ ${SignalInfo.rsrpLabel(it)}" } ?: "電波を取得できません",
+                    unit = cell?.rsrp?.let { "$it dBm ・ ${latencyText ?: SignalInfo.rsrpLabel(it)}" } ?: "電波を取得できません",
                     recovering = recovering,
                     celebrateKey = lastRecovery,
                     modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
                 )
                 Route.WIFI -> SignalGauge(
-                    quality = wifi?.quality,
-                    caption = wifi?.caption ?: "Wi-Fi",
-                    unit = wifi?.let { "${it.rssi} dBm ・ ${WifiReading.rssiLabel(it.rssi)}" } ?: "Wi-Fi に未接続",
+                    quality = Quality.combined(wifi?.quality, probe),
+                    caption = wifi?.let { w -> w.caption + (w.channel?.let { " ・ ch$it" } ?: "") } ?: "Wi-Fi",
+                    unit = wifi?.let { "${it.rssi} dBm ・ ${latencyText ?: WifiReading.rssiLabel(it.rssi)}" } ?: "Wi-Fi に未接続",
                     recovering = recovering,
                     celebrateKey = lastRecovery,
                     modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
@@ -300,17 +317,23 @@ private fun HeroCard(
             Spacer(Modifier.height(20.dp))
             Crossfade(targetState = shown, label = "tiles") { mode ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MetricTile("応答", probeMs, "ms", Modifier.weight(1f))
+                    MetricTile(if (mode == Route.WIFI) "ネット" else "応答", probeMs, "ms", Modifier.weight(1f))
                     when (mode) {
                         Route.MOBILE -> {
                             MetricTile("今日の復旧", "${stats.successes}", "回", Modifier.weight(1f))
                             MetricTile("正常率", okRatio?.toString() ?: "—", if (okRatio != null) "%" else "", Modifier.weight(1f))
                         }
                         Route.WIFI -> {
-                            MetricTile("リンク速度", wifi?.linkMbps?.toString() ?: "—", "Mbps", Modifier.weight(1f))
                             MetricTile(
-                                wifi?.standard ?: "チャンネル",
-                                wifi?.channel?.let { "ch $it" } ?: "—", "",
+                                "Wi-Fi 区間",
+                                probe?.hopMs?.toString() ?: "—",
+                                "ms",
+                                Modifier.weight(1f),
+                            )
+                            MetricTile(
+                                wifi?.standard ?: "リンク速度",
+                                wifi?.linkMbps?.toString() ?: "—",
+                                "Mbps",
                                 Modifier.weight(1f),
                             )
                         }
@@ -483,6 +506,6 @@ private fun RecentEvents(events: List<Event>, onOpenHistory: () -> Unit) {
 
 /** 判定できたサンプルのうち正常だった割合（%） */
 fun okRatio(samples: List<Sample>): Int? {
-    val judged = samples.filter { it.health == Health.OK || it.health == Health.BAD }
+    val judged = samples.filter { it.health == Health.OK || it.health == Health.UNSTABLE || it.health == Health.BAD }
     return if (judged.isEmpty()) null else judged.count { it.health == Health.OK } * 100 / judged.size
 }

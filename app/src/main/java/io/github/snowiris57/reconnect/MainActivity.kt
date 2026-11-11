@@ -86,6 +86,10 @@ class MainActivity : ComponentActivity() {
                 onboarded = true
             },
             showWelcome = { onboarded = false },
+            requestBackgroundLocation = {
+                permLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+            },
+            openLocationSettings = { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
             requestLocation = {
                 permLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             },
@@ -128,6 +132,9 @@ class MainActivity : ComponentActivity() {
             widgetHintDismissed = prefs.widgetHintDismissed,
             canAddTile = Build.VERSION.SDK_INT >= 33,
             locationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED,
+            locationOn = NetCheck.locationEnabled(this),
+            backgroundLocationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED,
         )
         MeterWidget.updateAll(this)

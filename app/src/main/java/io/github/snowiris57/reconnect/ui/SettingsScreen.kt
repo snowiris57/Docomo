@@ -43,6 +43,7 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
     var cooldown by remember { mutableFloatStateOf(prefs.cooldownSec.toFloat()) }
     var maxHour by remember { mutableFloatStateOf(prefs.maxPerHour.toFloat()) }
     var wifiMonitor by remember { mutableStateOf(prefs.wifiMonitor) }
+    var slow by remember { mutableFloatStateOf(prefs.slowMs.toFloat()) }
     var wifiRecover by remember { mutableStateOf(prefs.wifiRecover) }
 
     LazyColumn(
@@ -72,6 +73,16 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
                     range = 1f..10f, step = 1f,
                     onChange = { fail = it },
                     onDone = { prefs.failThreshold = fail.roundToInt() },
+                )
+                Divider()
+                SliderSetting(
+                    title = "「不安定」とみなす応答時間",
+                    value = slow,
+                    valueText = "${slow.roundToInt()}ms",
+                    help = "通じていても、これより遅いと黄色の「不安定」と表示します（再接続はしません）",
+                    range = 100f..1500f, step = 50f,
+                    onChange = { slow = it },
+                    onDone = { prefs.slowMs = slow.roundToInt() },
                 )
                 Divider()
                 SwitchSetting(
@@ -139,11 +150,20 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
                 )
                 Divider()
                 if (setup.locationGranted) {
-                    ListItem(
-                        headlineContent = { Text("Wi-Fi の名前を表示") },
-                        supportingContent = { Text("許可済み") },
-                        colors = itemColors(),
-                    )
+                    if (!setup.locationOn) {
+                        LinkItem("位置情報がオフです", "オンにしないと Wi-Fi 名が取れません") { actions.openLocationSettings() }
+                    } else if (!setup.backgroundLocationGranted) {
+                        LinkItem(
+                            "ウィジェットと通知にも Wi-Fi 名を出す",
+                            "位置情報を「常に許可」にすると、アプリを閉じていても Wi-Fi 名を表示できます",
+                        ) { actions.requestBackgroundLocation() }
+                    } else {
+                        ListItem(
+                            headlineContent = { Text("Wi-Fi の名前を表示") },
+                            supportingContent = { Text("許可済み（ウィジェット・通知にも表示）") },
+                            colors = itemColors(),
+                        )
+                    }
                 } else {
                     LinkItem(
                         "Wi-Fi の名前を表示",

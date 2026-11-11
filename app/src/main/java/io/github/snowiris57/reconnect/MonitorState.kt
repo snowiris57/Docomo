@@ -7,7 +7,8 @@ import java.io.File
 import java.util.Calendar
 
 /** 回線の健康状態 */
-enum class Health { OK, BAD, PAUSED, RECOVERING, STOPPED }
+/** 回線の健康状態。UNSTABLE は「通じるが、遅い・ときどき途切れる」 */
+enum class Health { OK, UNSTABLE, BAD, PAUSED, RECOVERING, STOPPED }
 
 data class Status(
     val running: Boolean = false,

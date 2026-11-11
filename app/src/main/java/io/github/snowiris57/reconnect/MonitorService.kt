@@ -47,6 +47,10 @@ class MonitorService : Service() {
     private var backoffSec = 0
     private var lastNotified = ""
 
+    // 「不安定」の判定に使う直近の疎通結果（回線が変わったらリセット）
+    private val window = ArrayDeque<ProbeResult>()
+    private var windowRoute: Route? = null
+
     private data class Check(
         val health: Health,
         val headline: String,
@@ -123,7 +127,11 @@ class MonitorService : Service() {
                         time = System.currentTimeMillis(),
                         // dBm（モバイルは RSRP、Wi-Fi は RSSI）
                         rsrp = if (c.route == Route.WIFI) c.wifi?.rssi else c.signal?.rsrp,
-                        quality = if (c.route == Route.WIFI) c.wifi?.quality else c.signal?.quality,
+                        // 通信品質（電波と応答時間の弱い方）
+                        quality = Quality.combined(
+                            if (c.route == Route.WIFI) c.wifi?.quality else c.signal?.quality,
+                            c.probe,
+                        ),
                         latencyMs = c.probe?.takeIf { it.ok }?.ms,
                         ok = c.probe?.ok ?: if (c.health == Health.BAD) false else null,
                         health = c.health,
@@ -166,9 +174,14 @@ class MonitorService : Service() {
             }
             val net = NetCheck.wifiNetwork(this)
                 ?: return Check(Health.BAD, "${name}に問題があります", "Wi-Fi が見つかりません", sig, null, Route.WIFI, wifi)
-            val probe = NetCheck.probe(net)
+            val probe = NetCheck.probe(net, measureHop = true)
+            val unstable = unstableReason(p, Route.WIFI, probe)
             if (!probe.ok) {
-                return Check(Health.BAD, "${name}に問題があります", "つながっているのに通信できません", sig, probe, Route.WIFI, wifi)
+                val where = if (probe.hopMs == null) "Wi-Fi 区間から応答がありません" else "つながっているのに通信できません"
+                return Check(Health.BAD, "${name}に問題があります", where, sig, probe, Route.WIFI, wifi)
+            }
+            if (unstable != null) {
+                return Check(Health.UNSTABLE, "${name}が不安定です", unstable, sig, probe, Route.WIFI, wifi)
             }
             return Check(Health.OK, "${name}は安定しています", "${p.intervalSec}秒ごとに見守っています", sig, probe, Route.WIFI, wifi)
         }
@@ -185,6 +198,7 @@ class MonitorService : Service() {
             ?: return Check(Health.BAD, "通信に問題があります", "モバイル回線が見つかりません", sig, null)
 
         val probe = NetCheck.probe(cell)
+        val unstable = unstableReason(p, Route.MOBILE, probe)
         if (!probe.ok) {
             return Check(Health.BAD, "通信に問題があります", "応答なし — パケ止まりの疑い", sig, probe)
         }
@@ -193,7 +207,27 @@ class MonitorService : Service() {
         if (p.signalTrigger && rsrp != null && rsrp < p.rsrpThreshold) {
             return Check(Health.BAD, "電波が弱くなっています", "RSRP $rsrp dBm（閾値 ${p.rsrpThreshold}）", sig, probe)
         }
+        if (unstable != null) {
+            return Check(Health.UNSTABLE, "通信が不安定です", unstable, sig, probe)
+        }
         return Check(Health.OK, "通信は安定しています", "${p.intervalSec}秒ごとに見守っています", sig, probe)
+    }
+
+    /** 通じてはいるが「遅い・ときどき途切れる」なら理由を返す */
+    private fun unstableReason(p: Prefs, route: Route, probe: ProbeResult): String? {
+        if (windowRoute != route) {
+            window.clear()
+            windowRoute = route
+        }
+        window.addLast(probe)
+        while (window.size > 6) window.removeFirst()
+        if (!probe.ok) return null
+        if (probe.ms > p.slowMs) return "応答 ${probe.ms}ms（目安は ${p.slowMs}ms 以内）"
+        val fails = window.count { !it.ok }
+        if (fails >= 2) return "直近で応答なしが${fails}回ありました"
+        val oks = window.filter { it.ok }.map { it.ms }.sorted()
+        if (oks.size >= 3 && oks[oks.size / 2] > p.slowMs * 3 / 4) return "応答が遅めの状態が続いています"
+        return null
     }
 
     private fun publish(c: Check, bad: Int, p: Prefs) {

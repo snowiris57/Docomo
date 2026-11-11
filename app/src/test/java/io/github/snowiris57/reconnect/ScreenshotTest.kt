@@ -114,23 +114,33 @@ class ScreenshotTest {
         app(false, ready)
     }
 
+    // 実機と同じ状況: iPhone がすぐそばで電波は最強だが、ネットの応答が遅い
     private val tether = WifiReading(
-        rssi = -52, linkMbps = 866, freqMhz = 2437, standard = "Wi-Fi 6", ssid = "Y's_iPhone", tethering = true,
+        rssi = -24, linkMbps = 77, freqMhz = 2437, standard = "Wi-Fi 6", ssid = "Y's_iPhone", tethering = true,
     )
+    private val slowProbe = ProbeResult(true, 486, hopMs = 23)
 
     private fun wifiMode() {
         MonitorState.status.value = MonitorState.status.value.copy(
-            route = Route.WIFI, wifi = tether, headline = "テザリングは安定しています",
-            detail = "15秒ごとに見守っています", probe = ProbeResult(true, 38),
+            route = Route.WIFI, wifi = tether, health = Health.UNSTABLE, headline = "テザリングが不安定です",
+            detail = "応答 486ms（目安は 300ms 以内）", probe = slowProbe,
         )
         // 直近の一部を Wi-Fi に
         MonitorState.samples.value = MonitorState.samples.value.mapIndexed { i, s ->
-            if (i >= 160) s.copy(route = Route.WIFI, quality = 0.74f + 0.04f * kotlin.math.sin(i / 5f), rsrp = -52) else s
+            if (i >= 160) s.copy(
+                route = Route.WIFI, rsrp = -24, health = Health.UNSTABLE,
+                quality = Quality.combined(tether.quality, slowProbe.copy(ms = 380L + (i % 5) * 40)),
+            ) else s
         }
     }
 
     @Test fun home_wifi_light() { wifiMode(); app(false, ready, tall = true) }
     @Test fun home_wifi_dark() { wifiMode(); app(true, ready) }
+    @Test fun home_wifi_noname() {
+        wifiMode()
+        MonitorState.status.value = MonitorState.status.value.copy(wifi = tether.copy(ssid = null))
+        app(false, ready.copy(locationGranted = false))
+    }
 
     @Test fun home_widget_hint() = app(false, ready.copy(canPinWidget = true), tall = true)
     @Test fun settings_dark() = app(true, ready, tab = 2)
@@ -156,9 +166,9 @@ class ScreenshotTest {
         }
         val gauge = GaugeBitmap.render(
             sizePx = 400,
-            quality = if (wifi) tether.quality else sig.quality,
-            value = if (wifi) "${(tether.quality * 100).toInt()}" else "72",
-            unit = if (wifi) "-52 dBm" else "-97 dBm",
+            quality = if (wifi) Quality.combined(tether.quality, slowProbe) else sig.quality,
+            value = if (wifi) "${((Quality.combined(tether.quality, slowProbe) ?: 0f) * 100).toInt()}" else "72",
+            unit = if (wifi) "-24 dBm" else "-97 dBm",
             caption = if (wifi) tether.caption else "5G NSA",
             palette = GaugeBitmap.Palette(
                 track = ctx.getColor(R.color.widget_track), text = ctx.getColor(R.color.widget_text),
@@ -169,11 +179,13 @@ class ScreenshotTest {
         if (wide) {
             v.findViewById<TextView>(R.id.dot).setTextColor(GaugeBitmap.GOOD)
             if (wifi) {
-                v.findViewById<TextView>(R.id.title).text = "テザリング安定"
+                v.findViewById<TextView>(R.id.dot).setTextColor(GaugeBitmap.WARN)
+                v.findViewById<TextView>(R.id.title).text = "テザリング不安定"
                 v.findViewById<TextView>(R.id.subtitle).text = "Y's_iPhone ・ 2.4GHz"
-                v.findViewById<TextView>(R.id.latency).text = "38"
-                v.findViewById<TextView>(R.id.recoveries).text = "866"
-                v.findViewById<TextView>(R.id.recoveries_label).text = "Mbps"
+                v.findViewById<TextView>(R.id.latency).text = "486"
+                v.findViewById<TextView>(R.id.latency_label).text = "ms ネット"
+                v.findViewById<TextView>(R.id.recoveries).text = "23"
+                v.findViewById<TextView>(R.id.recoveries_label).text = "ms Wi-Fi"
             } else {
                 v.findViewById<TextView>(R.id.subtitle).text = "NTT DOCOMO ・ 5G NSA"
                 v.findViewById<TextView>(R.id.latency).text = "42"

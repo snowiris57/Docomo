@@ -57,7 +57,7 @@ import kotlin.math.roundToInt
 private val hm = SimpleDateFormat("HH:mm", Locale.JAPAN)
 
 /**
- * 電波品質の推移グラフ。疎通NGは赤い点、再接続は縦の破線。
+ * 通信品質の推移グラフ。疎通NGは赤い点、再接続は縦の破線。
  * 指でなぞると、その時点の値を吹き出しで表示する。
  */
 @Composable
@@ -129,7 +129,7 @@ fun SignalChart(
                         }
                     }
                     .semantics {
-                        contentDescription = "直近${minutes}分の電波品質グラフ。疎通OK ${okCount}回、NG ${ngCount}回。指でなぞると各時点の値を表示します"
+                        contentDescription = "直近${minutes}分の通信品質グラフ。疎通OK ${okCount}回、NG ${ngCount}回。指でなぞると各時点の値を表示します"
                     }
             ) {
                 val w = size.width

@@ -49,6 +49,10 @@ data class SetupState(
     val canAddTile: Boolean = false,
     /** Wi-Fi の名前を表示するための位置情報の許可 */
     val locationGranted: Boolean = false,
+    /** 位置情報（GPS）がオンか。オフだと許可があっても Wi-Fi 名が取れない */
+    val locationOn: Boolean = true,
+    /** 位置情報の「常に許可」（ウィジェット・通知で Wi-Fi 名を出すため） */
+    val backgroundLocationGranted: Boolean = false,
 ) {
     val doneCount get() = listOf(shizuku == ShizukuStatus.GRANTED, permissions, battery).count { it }
     val complete get() = doneCount == 3
@@ -68,6 +72,8 @@ class AppActions(
     val finishOnboarding: () -> Unit = {},
     val showWelcome: () -> Unit = {},
     val requestLocation: () -> Unit = {},
+    val requestBackgroundLocation: () -> Unit = {},
+    val openLocationSettings: () -> Unit = {},
 )
 
 private enum class Tab(val label: String, val icon: ImageVector) {

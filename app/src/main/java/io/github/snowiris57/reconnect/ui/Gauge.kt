@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * 電波品質メーター（270°の弧、赤→黄→緑）。
+ * 通信品質メーター（270°の弧、赤→黄→緑）。
  * - 値の変化はばねアニメーション
  * - 背後に品質の色でほのかに光る
  * - 再接続中は弧の上を光が走る
@@ -97,7 +97,7 @@ fun SignalGauge(
                 contentDescription = when {
                     recovering -> "再接続中"
                     percent == null -> "電波を取得できません"
-                    else -> "電波品質 ${percent}パーセント、$unit、$caption"
+                    else -> "通信品質 ${percent}パーセント、$unit、$caption"
                 }
             },
         contentAlignment = Alignment.Center,

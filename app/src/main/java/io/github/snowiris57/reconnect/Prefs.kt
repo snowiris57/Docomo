@@ -68,4 +68,9 @@ class Prefs(ctx: Context) {
     var wifiRecover: Boolean
         get() = bool("wifi_recover", true)
         set(v) = sp.edit { putBoolean("wifi_recover", v) }
+
+    /** これより応答が遅いと「不安定」とみなす（ms） */
+    var slowMs: Int
+        get() = int("slow_ms", 300)
+        set(v) = sp.edit { putInt("slow_ms", v.coerceIn(100, 1500)) }
 }
