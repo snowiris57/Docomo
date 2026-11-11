@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.snowiris57.reconnect"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.1.0"
     }
 
     // CI とローカルで同じ署名にするため、リポジトリ同梱の debug.keystore を使う。

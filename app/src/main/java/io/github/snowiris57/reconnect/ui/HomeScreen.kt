@@ -1,13 +1,17 @@
 package io.github.snowiris57.reconnect.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,10 +21,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -34,14 +43,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -67,33 +82,93 @@ fun HomeScreen(
     actions: AppActions,
     onOpenHistory: () -> Unit,
     liveSignal: SignalInfo? = rememberLiveSignal(),
+    previewTouch: Float? = null,
 ) {
     val stats = remember(events) { DayStats.today(events) }
-    val okRatio = remember(samples) { okRatio(samples) }
+    val ratio = remember(samples) { okRatio(samples) }
     val signal = liveSignal ?: status.signal
+    // 直近30秒以内の復旧だけ波紋で祝う（アプリを開くたびに出ないように）
+    val lastRecovery = remember(events) {
+        events.firstOrNull { it.type == EventType.RECOVER_OK }?.time
+            ?.takeIf { System.currentTimeMillis() - it < 30_000 } ?: 0L
+    }
+    val recoveryTimes = remember(events) { events.filter { it.type == EventType.RECOVER_START }.map { it.time } }
+    var askShizuku by rememberSaveable { mutableStateOf(false) }
 
-    LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    val reconnect = {
+        if (setup.shizuku == ShizukuStatus.GRANTED) actions.reconnectNow() else askShizuku = true
+    }
+
+    // 上段: 状態の把握、下段: 操作と記録
+    val primary: LazyListScope.() -> Unit = {
         item { Header(status, signal) }
         if (!setup.complete) item { SetupCard(setup, actions) }
-        item { HeroCard(status, signal, stats, okRatio) }
-        item { ControlCard(status, monitoring, actions) }
+        item { HeroCard(status, signal, stats, ratio, lastRecovery) }
+    }
+    val secondary: LazyListScope.() -> Unit = {
+        item { ControlCard(status, monitoring, actions, reconnect) }
+        if (setup.complete && setup.canPinWidget && !setup.widgetPlaced && !setup.widgetHintDismissed) {
+            item { WidgetHintCard(actions) }
+        }
         item {
             SectionCard {
                 Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("電波品質の推移", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "電波品質の推移",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.semantics { heading() },
+                        )
                         Spacer(Modifier.weight(1f))
                         Text("最大1時間", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(Modifier.height(16.dp))
-                    SignalChart(samples, events.filter { it.type == EventType.RECOVER_START }.map { it.time })
+                    SignalChart(samples, recoveryTimes, previewTouch = previewTouch)
                 }
             }
         }
         item { RecentEvents(events.take(4), onOpenHistory) }
+    }
+
+    BoxWithConstraints {
+        val padding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)
+        val spacing = Arrangement.spacedBy(16.dp)
+        if (maxWidth >= 720.dp) {
+            // タブレット・横向き: 2列
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                LazyColumn(Modifier.weight(1f).widthIn(max = 560.dp), contentPadding = padding, verticalArrangement = spacing, content = primary)
+                LazyColumn(
+                    Modifier.weight(1f).widthIn(max = 560.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 24.dp),
+                    verticalArrangement = spacing,
+                    content = secondary,
+                )
+            }
+        } else {
+            LazyColumn(contentPadding = padding, verticalArrangement = spacing) {
+                primary()
+                secondary()
+            }
+        }
+    }
+
+    if (askShizuku) {
+        AlertDialog(
+            onDismissRequest = { askShizuku = false },
+            title = { Text("Shizuku が必要です") },
+            text = {
+                Text(
+                    "回線の入れ直しには Shizuku の許可が必要です。" +
+                        "root 化した端末なら、このまま root で試すこともできます。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { askShizuku = false; actions.requestShizuku() }) { Text("Shizuku を設定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { askShizuku = false; actions.reconnectNow() }) { Text("root で試す") }
+            },
+        )
     }
 }
 
@@ -117,7 +192,7 @@ fun rememberLiveSignal(): SignalInfo? {
 private fun Header(status: Status, signal: SignalInfo?) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("ReConnect", style = MaterialTheme.typography.headlineMedium)
+            Text("ReConnect", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
             Text(
                 signal?.carrier?.takeIf { it.isNotBlank() } ?: "モバイル回線の見張り番",
                 style = MaterialTheme.typography.bodyMedium,
@@ -129,7 +204,8 @@ private fun Header(status: Status, signal: SignalInfo?) {
 }
 
 @Composable
-private fun HeroCard(status: Status, signal: SignalInfo?, stats: DayStats, okRatio: Int?) {
+private fun HeroCard(status: Status, signal: SignalInfo?, stats: DayStats, okRatio: Int?, lastRecovery: Long) {
+    val recovering = status.health == Health.RECOVERING
     SectionCard {
         Column(
             Modifier.fillMaxWidth().padding(20.dp).animateContentSize(),
@@ -139,19 +215,31 @@ private fun HeroCard(status: Status, signal: SignalInfo?, stats: DayStats, okRat
                 quality = signal?.quality,
                 caption = signal?.type ?: "—",
                 unit = signal?.rsrp?.let { "$it dBm ・ ${SignalInfo.rsrpLabel(it)}" } ?: "電波を取得できません",
-                modifier = Modifier.fillMaxWidth(0.78f),
+                recovering = recovering,
+                celebrateKey = lastRecovery,
+                modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
             )
             Spacer(Modifier.height(4.dp))
-            Text(status.headline, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-            if (status.detail.isNotEmpty()) {
-                Text(
-                    status.detail,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
+            AnimatedContent(
+                targetState = status.headline to status.detail,
+                transitionSpec = {
+                    (fadeIn() + slideInVertically { it / 4 }) togetherWith (fadeOut() + slideOutVertically { -it / 4 })
+                },
+                label = "headline",
+            ) { (headline, detail) ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(headline, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                    if (detail.isNotEmpty()) {
+                        Text(
+                            detail,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
             }
-            AnimatedVisibility(status.health == Health.RECOVERING) {
+            AnimatedVisibility(recovering) {
                 LinearProgressIndicator(
                     Modifier.fillMaxWidth(0.6f).padding(top = 12.dp),
                     strokeCap = StrokeCap.Round,
@@ -173,7 +261,7 @@ private fun HeroCard(status: Status, signal: SignalInfo?, stats: DayStats, okRat
 }
 
 @Composable
-private fun ControlCard(status: Status, monitoring: Boolean, actions: AppActions) {
+private fun ControlCard(status: Status, monitoring: Boolean, actions: AppActions, onReconnect: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     val recovering = status.health == Health.RECOVERING
     SectionCard {
@@ -199,7 +287,7 @@ private fun ControlCard(status: Status, monitoring: Boolean, actions: AppActions
             FilledTonalButton(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    actions.reconnectNow()
+                    onReconnect()
                 },
                 enabled = !recovering,
                 modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp),
@@ -217,11 +305,35 @@ private fun ControlCard(status: Status, monitoring: Boolean, actions: AppActions
 }
 
 @Composable
+private fun WidgetHintCard(actions: AppActions) {
+    SectionCard {
+        Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("ホーム画面にメーターを", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "アプリを開かなくても電波と状態がわかり、ワンタップで再接続できます",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(Modifier.padding(top = 8.dp)) {
+                    FilledTonalButton(onClick = actions.pinWidget) {
+                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("ウィジェットを追加")
+                    }
+                    TextButton(onClick = actions.dismissWidgetHint) { Text("あとで") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SetupCard(setup: SetupState, actions: AppActions) {
     SectionCard {
         Column(Modifier.padding(vertical = 16.dp)) {
             Column(Modifier.padding(horizontal = 20.dp)) {
-                Text("はじめに", style = MaterialTheme.typography.titleMedium)
+                Text("はじめに", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text(
                     "あと ${3 - setup.doneCount} ステップで準備完了です",
                     style = MaterialTheme.typography.bodyMedium,
@@ -292,7 +404,11 @@ private fun RecentEvents(events: List<Event>, onOpenHistory: () -> Unit) {
     SectionCard {
         Column(Modifier.padding(vertical = 8.dp)) {
             Row(Modifier.padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("最近のできごと", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(
+                    "最近のできごと",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).semantics { heading() },
+                )
                 TextButton(onClick = onOpenHistory) { Text("すべて見る") }
             }
             if (events.isEmpty()) {

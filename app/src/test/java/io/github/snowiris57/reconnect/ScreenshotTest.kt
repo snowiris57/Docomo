@@ -61,11 +61,21 @@ class ScreenshotTest {
         )
     }
 
-    private fun app(dark: Boolean, setup: SetupState, tab: Int = 0, tall: Boolean = false) {
+    private fun app(
+        dark: Boolean,
+        setup: SetupState,
+        tab: Int = 0,
+        tall: Boolean = false,
+        onboarded: Boolean = true,
+        touch: Float? = null,
+        base: DeviceConfig = DeviceConfig.PIXEL_6,
+        fontScale: Float = 1f,
+    ) {
         paparazzi.unsafeUpdateConfig(
-            deviceConfig = DeviceConfig.PIXEL_6.copy(
+            deviceConfig = base.copy(
                 nightMode = if (dark) NightMode.NIGHT else NightMode.NOTNIGHT,
-                screenHeight = if (tall) 5200 else DeviceConfig.PIXEL_6.screenHeight,
+                screenHeight = if (tall) 5200 else base.screenHeight,
+                fontScale = fontScale,
             )
         )
         paparazzi.snapshot {
@@ -74,9 +84,11 @@ class ScreenshotTest {
                     prefs = Prefs(paparazzi.context),
                     setup = setup,
                     monitoring = true,
+                    onboarded = onboarded,
                     actions = AppActions(),
                     initialTab = tab,
                     preview = true,
+                    previewTouch = touch,
                 )
             }
         }
@@ -89,6 +101,20 @@ class ScreenshotTest {
     @Test fun home_full() = app(false, ready, tall = true)
     @Test fun home_setup() = app(false, SetupState(ShizukuStatus.NOT_GRANTED, permissions = true, battery = false))
     @Test fun history_light() = app(false, ready, tab = 1)
+    @Test fun welcome_light() = app(false, ready, onboarded = false)
+    @Test fun welcome_dark() = app(true, ready, onboarded = false)
+    @Test fun home_chart_touch() = app(false, ready, tall = true, touch = 0.62f)
+    @Test fun home_large_font() = app(false, ready, fontScale = 1.3f)
+    @Test fun home_tablet() = app(true, ready, base = DeviceConfig.PIXEL_C)
+
+    @Test fun home_recovering() {
+        MonitorState.status.value = MonitorState.status.value.copy(
+            health = Health.RECOVERING, headline = "再接続しています…", detail = "モバイルデータを入れ直しています",
+        )
+        app(false, ready)
+    }
+
+    @Test fun home_widget_hint() = app(false, ready.copy(canPinWidget = true), tall = true)
     @Test fun settings_dark() = app(true, ready, tab = 2)
 
     private fun widget(layout: Int, dark: Boolean, wide: Boolean) {

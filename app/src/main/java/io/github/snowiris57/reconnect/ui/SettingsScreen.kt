@@ -34,7 +34,7 @@ import io.github.snowiris57.reconnect.SignalInfo
 import kotlin.math.roundToInt
 
 @Composable
-fun SettingsScreen(prefs: Prefs, actions: AppActions) {
+fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
     var interval by remember { mutableFloatStateOf(prefs.intervalSec.toFloat()) }
     var fail by remember { mutableFloatStateOf(prefs.failThreshold.toFloat()) }
     var signalTrigger by remember { mutableStateOf(prefs.signalTrigger) }
@@ -118,6 +118,22 @@ fun SettingsScreen(prefs: Prefs, actions: AppActions) {
                     onChange = { maxHour = it },
                     onDone = { prefs.maxPerHour = maxHour.roundToInt() },
                 )
+            }
+        }
+        item {
+            Group("便利な機能") {
+                if (setup.canPinWidget) {
+                    LinkItem(
+                        if (setup.widgetPlaced) "電波メーターをもう1つ追加" else "ホーム画面に電波メーターを置く",
+                        "2×2 はメーター、横に広げると再接続ボタンも出ます",
+                    ) { actions.pinWidget() }
+                    Divider()
+                }
+                if (setup.canAddTile) {
+                    LinkItem("クイック設定にタイルを追加", "通知パネルから見守りを ON/OFF できます") { actions.addTile() }
+                    Divider()
+                }
+                LinkItem("使い方をもう一度見る", "最初の案内画面を表示します") { actions.showWelcome() }
             }
         }
         item {

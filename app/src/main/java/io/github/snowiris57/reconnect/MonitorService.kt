@@ -304,14 +304,17 @@ class MonitorService : Service() {
             st.signal?.short(),
             st.probe?.takeIf { it.ok }?.let { "${it.ms}ms" },
         ).joinToString(" ・ ")
-        if (text == lastNotified) return
-        lastNotified = text
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
+        val busy = st.health == Health.RECOVERING
+        val key = "$busy|$text"
+        if (key == lastNotified) return
+        lastNotified = key
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text, busy))
     }
 
-    private fun buildNotification(text: String) = NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(text: String, busy: Boolean = false) = NotificationCompat.Builder(this, CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle("回線を見守っています")
+        .setContentTitle(if (busy) "回線をつなぎ直しています" else "回線を見守っています")
+        .setProgress(0, 0, busy)
         .setContentText(text)
         .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setOngoing(true)

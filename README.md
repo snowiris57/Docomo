@@ -5,9 +5,13 @@
 電波の強さはアプリとホーム画面ウィジェットの**メーター**でひと目でわかります。
 
 <p>
-<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_light.png" width="250" alt="ホーム（ライト）">
-<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_dark.png" width="250" alt="ホーム（ダーク）">
-<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_history_light.png" width="250" alt="履歴">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_welcome_light.png" width="200" alt="はじめての案内">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_light.png" width="200" alt="ホーム（ライト）">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_dark.png" width="200" alt="ホーム（ダーク）">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_history_light.png" width="200" alt="履歴">
+</p>
+<p>
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_tablet.png" width="560" alt="タブレット（2列＋ナビゲーションレール）">
 </p>
 
 ### ホーム画面ウィジェット「電波メーター」
@@ -29,11 +33,15 @@
 | 🛰 **パケ止まりの検知** | モバイル回線経由で `generate_204` に小さな通信を送り、届かない状態が続いたら異常と判断 |
 | 🔁 **自動で再接続** | ① モバイルデータ OFF→ON → ② だめなら機内モード ON→OFF |
 | 🧯 **やりすぎ防止** | 再接続後は待ち時間を入れ、失敗するたびに倍々に延長（最大30分）。1時間あたりの回数にも上限。途中で止めても無線を切ったままにしない |
-| 📈 **電波品質の推移** | 直近1時間の推移グラフに、疎通NG（赤い点）と再接続（青い破線）を表示 |
+| 📈 **電波品質の推移** | 直近1時間の推移グラフに、疎通NG（赤い点）と再接続（青い破線）を表示。アプリを閉じても残ります |
 | 🗂 **履歴と統計** | 今日の再接続回数・成功率・異常検知・正常率、日ごとのタイムライン |
 | ⚙️ **細かな設定** | チェック間隔、判定回数、電波が弱いときも再接続（RSRP 閾値）、待ち時間、上限 |
-| 🔔 **通知とタイル** | 通知から「今すぐ再接続」「停止」。クイック設定タイルで監視の ON/OFF |
-| ♿ **使いやすさ** | ダークモード、Material You、メーターやグラフに読み上げ用の説明、触覚フィードバック |
+| 🔔 **通知とタイル** | 通知から「今すぐ再接続」「停止」、再接続中は進捗バー。クイック設定タイルで監視の ON/OFF |
+| ✨ **気持ちよい動き** | 値はばねアニメーションで動き、再接続中は弧の上を光が走り、復旧すると緑の波紋が広がる |
+| 👆 **触れるグラフ** | 推移グラフを指でなぞると、その時刻の品質・RSRP・応答速度を吹き出しで表示 |
+| 🧭 **迷わない導線** | 初回の案内（メーターのデモつき）、準備のチェックリスト、ウィジェットやタイルをアプリから追加、Shizuku が無いときの案内 |
+| 📱 **どの画面でも** | タブレット・横向きは2列＋ナビゲーションレール。文字サイズを大きくしても崩れない |
+| ♿ **使いやすさ** | ダークモード、Material You、メーターやグラフに読み上げ用の説明、見出しの指定、触覚フィードバック |
 
 Wi-Fi・機内モード・モバイルデータ OFF の間は、監視を自動で休みます。
 
@@ -50,9 +58,9 @@ Android 10 以上。普通のアプリには機内モードやモバイルデー
 2. ReConnect の APK をインストールします。
    - GitHub の **Actions** → 最新の「Build APK」→ Artifacts の `ReConnect-apk`
    - または `v1.0.0` などのタグを push すると **Releases** に APK が添付されます
-3. アプリのホームに出る「**はじめに**」の 3 ステップを済ませます（Shizuku・通知と電話の状態・電池の最適化）。
+3. 最初の案内のあと、ホームに出る「**はじめに**」の 3 ステップを済ませます（Shizuku・通知と電話の状態・電池の最適化）。
 4. Wi-Fi をオフにして「**今すぐ再接続**」を押し、モバイルデータが一瞬切れて戻ることを確かめます。
-5. 「**自動再接続**」をオンにすれば完了です。ホーム画面に「電波メーター」ウィジェットを置くのがおすすめです。
+5. 「**自動再接続**」をオンにすれば完了です。ホームの案内カード（または 設定 → 便利な機能）から「電波メーター」ウィジェットを置けます。
 
 ## 開発
 

@@ -109,12 +109,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:background="@drawable/widget_btn"
+            android:drawableStart="@drawable/ic_refresh"
+            android:drawablePadding="6dp"
             android:fontFamily="sans-serif-medium"
             android:minHeight="36dp"
             android:gravity="center"
             android:paddingStart="14dp"
             android:paddingEnd="14dp"
-            android:text="↻  今すぐ再接続"
+            android:text="今すぐ再接続"
             android:textColor="@color/widget_btn_text"
             android:textSize="13sp" />
     </LinearLayout>

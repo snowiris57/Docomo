@@ -1,6 +1,10 @@
 package io.github.snowiris57.reconnect
 
 import android.Manifest
+import android.app.StatusBarManager
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.graphics.drawable.Icon
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -30,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var prefs: Prefs
     private var setup by mutableStateOf(SetupState())
     private var monitoring by mutableStateOf(false)
+    private var onboarded by mutableStateOf(true)
 
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
@@ -43,6 +48,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         monitoring = prefs.enabled
+        onboarded = prefs.onboarded
 
         Shizuku.addRequestPermissionResultListener(shizukuResult)
         Shizuku.addBinderReceivedListenerSticky(shizukuReceived)
@@ -62,7 +68,6 @@ class MainActivity : ComponentActivity() {
                 if (on) MonitorService.start(this) else MonitorService.stop(this)
             },
             reconnectNow = {
-                if (setup.shizuku != ShizukuStatus.GRANTED) toast("Shizuku が未許可のため root で試みます")
                 MonitorService.reconnectNow(this)
             },
             clearHistory = {
@@ -70,11 +75,22 @@ class MainActivity : ComponentActivity() {
                 MeterWidget.updateAll(this)
             },
             openUrl = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+            pinWidget = ::pinWidget,
+            dismissWidgetHint = {
+                prefs.widgetHintDismissed = true
+                refresh()
+            },
+            addTile = ::addTile,
+            finishOnboarding = {
+                prefs.onboarded = true
+                onboarded = true
+            },
+            showWelcome = { onboarded = false },
         )
 
         setContent {
             ReConnectTheme {
-                ReConnectApp(prefs = prefs, setup = setup, monitoring = monitoring, actions = actions)
+                ReConnectApp(prefs = prefs, setup = setup, monitoring = monitoring, onboarded = onboarded, actions = actions)
             }
         }
     }
@@ -93,6 +109,7 @@ class MainActivity : ComponentActivity() {
 
     private fun refresh() {
         monitoring = prefs.enabled
+        onboarded = prefs.onboarded
         setup = SetupState(
             shizuku = when {
                 Shell.shizukuGranted() -> ShizukuStatus.GRANTED
@@ -103,6 +120,10 @@ class MainActivity : ComponentActivity() {
                 ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
             },
             battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName),
+            widgetPlaced = widgetManager().getAppWidgetIds(widgetComponent()).isNotEmpty(),
+            canPinWidget = widgetManager().isRequestPinAppWidgetSupported,
+            widgetHintDismissed = prefs.widgetHintDismissed,
+            canAddTile = Build.VERSION.SDK_INT >= 33,
         )
         MeterWidget.updateAll(this)
     }
@@ -127,6 +148,31 @@ class MainActivity : ComponentActivity() {
             Shizuku.isPreV11() -> toast("Shizuku が古すぎます。更新してください")
             !Shell.shizukuGranted() -> Shizuku.requestPermission(REQ_SHIZUKU)
             else -> toast("許可済みです")
+        }
+    }
+
+    private fun widgetManager() = AppWidgetManager.getInstance(this)
+    private fun widgetComponent() = ComponentName(this, MeterWidget::class.java)
+
+    private fun pinWidget() {
+        if (!widgetManager().requestPinAppWidget(widgetComponent(), null, null)) {
+            toast("ホーム画面を長押しして「ウィジェット」から ReConnect を追加してください")
+        }
+    }
+
+    private fun addTile() {
+        if (Build.VERSION.SDK_INT < 33) return
+        getSystemService(StatusBarManager::class.java).requestAddTileService(
+            ComponentName(this, MonitorTileService::class.java),
+            getString(R.string.app_name),
+            Icon.createWithResource(this, R.drawable.ic_notification),
+            mainExecutor,
+        ) { result ->
+            when (result) {
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> toast("タイルを追加しました")
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> toast("タイルはすでに追加されています")
+                else -> Unit
+            }
         }
     }
 

@@ -130,7 +130,7 @@ class MeterWidget : AppWidgetProvider() {
                 if (snap.health == Health.RECOVERING) {
                     setTextViewText(R.id.reconnect, "再接続中…")
                 } else {
-                    setTextViewText(R.id.reconnect, "↻  今すぐ再接続")
+                    setTextViewText(R.id.reconnect, "今すぐ再接続")
                 }
             }
 

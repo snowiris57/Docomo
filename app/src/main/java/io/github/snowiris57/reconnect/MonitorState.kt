@@ -69,6 +69,8 @@ object MonitorState {
     val events = MutableStateFlow<List<Event>>(emptyList())
 
     private var file: File? = null
+    private var sampleFile: File? = null
+    private var unsaved = 0
 
     fun init(ctx: Context) {
         val f = File(ctx.filesDir, "events.tsv")
@@ -76,6 +78,25 @@ object MonitorState {
         if (f.exists()) {
             events.value = f.readLines().mapNotNull(::parse).takeLast(MAX_EVENTS).reversed()
         }
+        val sf = File(ctx.filesDir, "samples.tsv")
+        sampleFile = sf
+        if (sf.exists()) {
+            val since = System.currentTimeMillis() - 60 * 60 * 1000L
+            samples.value = sf.readLines().mapNotNull(::parseSample).filter { it.time >= since }.takeLast(MAX_SAMPLES)
+        }
+    }
+
+    private fun parseSample(line: String): Sample? {
+        val p = line.split('\t')
+        if (p.size != 6) return null
+        return Sample(
+            time = p[0].toLongOrNull() ?: return null,
+            rsrp = p[1].toIntOrNull(),
+            quality = p[2].toFloatOrNull(),
+            latencyMs = p[3].toLongOrNull(),
+            ok = p[4].toBooleanStrictOrNull(),
+            health = runCatching { Health.valueOf(p[5]) }.getOrNull() ?: return null,
+        )
     }
 
     private fun parse(line: String): Event? {
@@ -100,8 +121,19 @@ object MonitorState {
         }
     }
 
+    @Synchronized
     fun addSample(s: Sample) {
         samples.update { (it + s).takeLast(MAX_SAMPLES) }
+        // 書き込みは 4 回に 1 回（約1分ごと）
+        if (++unsaved < 4) return
+        unsaved = 0
+        val f = sampleFile ?: return
+        try {
+            f.writeText(samples.value.joinToString("\n", postfix = "\n") {
+                "${it.time}\t${it.rsrp ?: ""}\t${it.quality ?: ""}\t${it.latencyMs ?: ""}\t${it.ok ?: ""}\t${it.health}"
+            })
+        } catch (_: Exception) {
+        }
     }
 
     @Synchronized

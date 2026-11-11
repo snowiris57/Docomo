@@ -48,4 +48,14 @@ class Prefs(ctx: Context) {
     var useAirplane: Boolean
         get() = bool("use_airplane", true)
         set(v) = sp.edit { putBoolean("use_airplane", v) }
+
+    /** 最初の案内を見終えたか */
+    var onboarded: Boolean
+        get() = bool("onboarded", false)
+        set(v) = sp.edit { putBoolean("onboarded", v) }
+
+    /** ウィジェット追加の案内を閉じたか */
+    var widgetHintDismissed: Boolean
+        get() = bool("widget_hint_dismissed", false)
+        set(v) = sp.edit { putBoolean("widget_hint_dismissed", v) }
 }
