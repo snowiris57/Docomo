@@ -1,5 +1,10 @@
 package io.github.snowiris57.reconnect.ui
 
+import io.github.snowiris57.reconnect.TrafficSample
+import io.github.snowiris57.reconnect.Traffic
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -87,6 +92,7 @@ fun HomeScreen(
     onOpenHistory: () -> Unit,
     live: LiveReadings = rememberLive(),
     previewTouch: Float? = null,
+    traffic: List<TrafficSample> = Traffic.samples.collectAsStateWithLifecycle().value,
 ) {
     val stats = remember(events) { DayStats.today(events) }
     val ratio = remember(samples) { okRatio(samples) }
@@ -141,6 +147,7 @@ fun HomeScreen(
                 }
             }
         }
+        item { TrafficCard(traffic, live) }
         item { RecentEvents(events.take(4), onOpenHistory) }
     }
 
@@ -487,6 +494,55 @@ private fun SetupRow(done: Boolean, title: String, body: String, action: String,
         trailingContent = { if (!done) TextButton(onClick = onClick) { Text(action) } },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     )
+}
+
+/** 通信量（受信・送信）。いまの速さ、1 時間の合計、推移のグラフ */
+@Composable
+internal fun TrafficCard(traffic: List<TrafficSample>, live: LiveReadings, previewTouch: Float? = null) {
+    val since = (traffic.lastOrNull()?.time ?: 0L) - 60 * 60 * 1000L
+    val hour = traffic.filter { it.time >= since }
+    val rxTotal = hour.sumOf { it.rx } * Traffic.STEP_MS / 1000
+    val txTotal = hour.sumOf { it.tx } * Traffic.STEP_MS / 1000
+    SectionCard {
+        Column(Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "通信量",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Spacer(Modifier.weight(1f))
+                Text("直近1時間（10秒ごと）", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                TrafficNow("↓", live.rx, "受信", TrafficColors.rx, Modifier.weight(1f))
+                TrafficNow("↑", live.tx, "送信", TrafficColors.tx, Modifier.weight(1f))
+            }
+            if (hour.isNotEmpty()) {
+                Text(
+                    "1時間の合計  ↓ ${Traffic.formatBytes(rxTotal)}  ↑ ${Traffic.formatBytes(txTotal)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            TrafficChart(traffic, previewTouch = previewTouch)
+        }
+    }
+}
+
+@Composable
+private fun TrafficNow(arrow: String, rate: Long?, label: String, color: Color, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "$arrow " + (rate?.let { Traffic.formatRate(it) } ?: "—"),
+            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
+            color = color,
+        )
+    }
 }
 
 @Composable

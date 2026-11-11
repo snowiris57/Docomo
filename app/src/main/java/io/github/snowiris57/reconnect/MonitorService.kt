@@ -113,6 +113,13 @@ class MonitorService : Service() {
         MonitorState.event(EventType.START, "監視を開始しました")
         MonitorState.status.update { it.copy(running = true) }
         loopJob = scope.launch { loop() }
+        // 通信量のグラフ用。見守りの間隔とは別に 10 秒ごと
+        scope.launch {
+            while (isActive) {
+                Traffic.tick()
+                delay(Traffic.STEP_MS)
+            }
+        }
     }
 
     private suspend fun loop() {

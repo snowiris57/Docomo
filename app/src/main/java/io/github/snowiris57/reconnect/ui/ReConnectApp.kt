@@ -171,7 +171,7 @@ private fun MainScaffold(
                             Tab.HOME -> HomeScreen(
                                 status, samples, events, setup, monitoring, actions,
                                 onOpenHistory = { tab = 1 },
-                                live = if (preview) LiveReadings(status.route, status.signal, status.wifi) else rememberLive(),
+                                live = if (preview) LiveReadings(status.route, status.signal, status.wifi, rx = 1200, tx = 150) else rememberLive(),
                                 previewTouch = previewTouch,
                             )
                             Tab.HISTORY -> HistoryScreen(events, samples, onClear = actions.clearHistory)

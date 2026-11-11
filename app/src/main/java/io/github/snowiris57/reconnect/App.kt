@@ -6,6 +6,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         MonitorState.init(this)
+        Traffic.init(this)
         NetCheck.init(this)
     }
 }

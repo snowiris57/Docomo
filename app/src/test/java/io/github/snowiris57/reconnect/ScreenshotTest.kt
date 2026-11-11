@@ -16,6 +16,14 @@ import io.github.snowiris57.reconnect.ui.ReConnectTheme
 import io.github.snowiris57.reconnect.ui.SetupState
 import io.github.snowiris57.reconnect.ui.ShizukuStatus
 import io.github.snowiris57.reconnect.widget.MeterWidget
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import io.github.snowiris57.reconnect.ui.LiveReadings
+import io.github.snowiris57.reconnect.ui.TrafficCard
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -46,6 +54,12 @@ class ScreenshotTest {
             Sample(t, (q * 60 - 140).toInt(), q, if (dip) null else 40L + (i % 7) * 6, !dip || i < 124, if (dip && i >= 124) Health.BAD else Health.OK)
         }
         MonitorState.samples.value = samples
+        // 通信量: ふだんは少なく、途中で動画などのまとまった受信
+        Traffic.samples.value = (0 until 360).map { i ->
+            val burst = i in 300..330
+            val rx = if (burst) (3_500_000 + 2_500_000 * sin(i * 1.3)).toLong() else (800 + 600 * sin(i / 5.0) + (if (i % 37 == 0) 40_000 else 0)).toLong()
+            TrafficSample(now - (360 - i) * 10_000L, rx.coerceAtLeast(0), (300 + 200 * sin(i / 3.0) + (if (burst) 60_000 else 0)).toLong())
+        }
         val e = { minAgo: Int, type: EventType, msg: String -> Event(now - minAgo * 60_000L, type, msg) }
         MonitorState.events.value = listOf(
             e(17, EventType.RECOVER_OK, "通信が復旧しました"),
@@ -142,6 +156,25 @@ class ScreenshotTest {
         app(false, ready.copy(locationGranted = false))
     }
 
+    private fun trafficCard(dark: Boolean, touch: Float? = null) {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_6.copy(
+                nightMode = if (dark) NightMode.NIGHT else NightMode.NOTNIGHT,
+                screenHeight = 1150,
+            )
+        )
+        val traffic = Traffic.samples.value
+        paparazzi.snapshot {
+            ReConnectTheme(dark = dark, dynamic = false) {
+                Box(Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+                    TrafficCard(traffic, LiveReadings(rx = 1200, tx = 150), previewTouch = touch)
+                }
+            }
+        }
+    }
+
+    @Test fun traffic_light() = trafficCard(false)
+    @Test fun traffic_dark_touch() = trafficCard(true, touch = 0.88f)
     @Test fun home_widget_hint() = app(false, ready.copy(canPinWidget = true), tall = true)
     @Test fun settings_dark() = app(true, ready, tab = 2)
 
