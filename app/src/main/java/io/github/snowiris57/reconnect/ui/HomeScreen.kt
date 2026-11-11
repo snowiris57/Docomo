@@ -194,7 +194,11 @@ private fun Header(status: Status, shown: Route, cell: SignalInfo?, wifi: WifiRe
             Text(
                 when (shown) {
                     Route.MOBILE -> cell?.carrier?.takeIf { it.isNotBlank() } ?: "モバイル回線の見張り番"
-                    Route.WIFI -> wifi?.ssid ?: if (wifi?.tethering == true) "テザリング" else "Wi-Fi"
+                    Route.WIFI -> listOfNotNull(
+                        wifi?.ssid ?: if (wifi?.tethering == true) "テザリング" else "Wi-Fi",
+                        wifi?.standard,
+                        wifi?.channel?.let { "ch$it" },
+                    ).joinToString(" ・ ")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -275,9 +279,9 @@ private fun HeroCard(
                 )
                 Route.WIFI -> SignalGauge(
                     quality = Quality.combined(wifi?.quality, probe),
-                    caption = wifi?.let { w -> w.caption + (w.channel?.let { " ・ ch$it" } ?: "") } ?: "Wi-Fi",
+                    caption = wifi?.caption ?: "Wi-Fi",
                     unit = wifi?.let { "${it.rssi} dBm ・ ${latencyText ?: WifiReading.rssiLabel(it.rssi)}" } ?: "Wi-Fi に未接続",
-                    extra = wifi?.speedText?.let { sp -> sp + (wifi.standard?.let { " ・ $it" } ?: "") },
+                    extra = wifi?.speedText,
                     recovering = recovering,
                     celebrateKey = lastRecovery,
                     modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
@@ -446,8 +450,8 @@ private fun SetupCard(setup: SetupState, actions: AppActions) {
             )
             SetupRow(
                 done = setup.permissions,
-                title = "通知と電話の状態",
-                body = "見守り中の表示と、回線の種類の取得に使います",
+                title = "通知・電話・位置情報",
+                body = "見守り中の表示、回線の種類、Wi-Fi 名の表示に使います（位置そのものは使いません）",
                 action = "許可",
                 onClick = actions.requestPermissions,
             )

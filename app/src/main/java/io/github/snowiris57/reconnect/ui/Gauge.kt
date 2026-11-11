@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -110,8 +112,7 @@ fun SignalGauge(
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = size.minDimension * 0.07f
-            // 外側に目盛りの数字を置く余白
-            val inset = stroke / 2 + size.minDimension * 0.085f
+            val inset = stroke / 2 + size.minDimension * 0.03f
             val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
             val topLeft = Offset(inset, inset)
             val r = arcSize.width / 2
@@ -137,10 +138,10 @@ fun SignalGauge(
 
             drawArc(track, 135f, 270f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
 
-            // 目盛りの数字（0・25・50・75・100）を弧の外側に
+            // 目盛りの数字（0・25・50・75・100）を、目盛りのすぐ内側に（TetherPulse と同じくメーターの中）
             for (k in 0..4) {
                 val a = Math.toRadians(135.0 + 270.0 * k / 4)
-                val rr = r + stroke * 1.25f
+                val rr = r - stroke * 2.35f
                 val label = textMeasurer.measure("${k * 25}", scaleStyle)
                 drawText(
                     label,
@@ -208,16 +209,19 @@ fun SignalGauge(
             }
         }
 
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 目盛りの数字と重ならないよう、中央の文字は幅を絞る
+        Column(Modifier.fillMaxWidth(0.56f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 caption,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = percent?.let { "${(animated * 100).roundToInt()}" } ?: "—",
-                fontSize = 58.sp,
-                lineHeight = 58.sp,
+                fontSize = 52.sp,
+                lineHeight = 54.sp,
                 fontWeight = FontWeight.Bold,
                 // 数字が変わっても幅が揺れないよう等幅数字
                 style = MaterialTheme.typography.displayLarge.copy(fontFeatureSettings = "tnum"),
@@ -226,14 +230,18 @@ fun SignalGauge(
             )
             Text(
                 if (recovering) "つなぎ直しています" else unit,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (extra != null && !recovering) {
                 Text(
                     extra,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

@@ -37,7 +37,23 @@ class MainActivity : ComponentActivity() {
     private var onboarded by mutableStateOf(true)
 
     private val permLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+            refresh()
+            // 位置情報を許可してもらえたら、続けて「常に許可」も聞く（ウィジェット・通知でも Wi-Fi 名を出すため）
+            if (result[Manifest.permission.ACCESS_FINE_LOCATION] == true) askBackgroundLocationOnce()
+        }
+
+    private val bgLocationLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
+
+    private fun askBackgroundLocationOnce() {
+        if (prefs.bgLocationAsked) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        prefs.bgLocationAsked = true
+        bgLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+    }
 
     private val shizukuResult = Shizuku.OnRequestPermissionResultListener { _, _ -> runOnUiThread { refresh() } }
     private val shizukuReceived = Shizuku.OnBinderReceivedListener { runOnUiThread { refresh() } }
@@ -87,7 +103,7 @@ class MainActivity : ComponentActivity() {
             },
             showWelcome = { onboarded = false },
             requestBackgroundLocation = {
-                permLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+                bgLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             },
             openLocationSettings = { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
             requestLocation = {
@@ -143,6 +159,9 @@ class MainActivity : ComponentActivity() {
     private fun runtimePermissions(): Array<String> = buildList {
         add(Manifest.permission.READ_PHONE_STATE)
         if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+        // Wi-Fi 名（SSID）を表示するため。位置そのものは使わない
+        add(Manifest.permission.ACCESS_FINE_LOCATION)
+        add(Manifest.permission.ACCESS_COARSE_LOCATION)
     }.toTypedArray()
 
     private fun onShizuku() {

@@ -69,6 +69,11 @@ class Prefs(ctx: Context) {
         get() = bool("wifi_recover", true)
         set(v) = sp.edit { putBoolean("wifi_recover", v) }
 
+    /** 位置情報の「常に許可」を一度聞いたか（何度も聞かないため） */
+    var bgLocationAsked: Boolean
+        get() = bool("bg_location_asked", false)
+        set(v) = sp.edit { putBoolean("bg_location_asked", v) }
+
     /** これより応答が遅いと「不安定」とみなす（ms） */
     var slowMs: Int
         get() = int("slow_ms", 300)
