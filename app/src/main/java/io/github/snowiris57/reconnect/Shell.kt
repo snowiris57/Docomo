@@ -96,6 +96,9 @@ object Radio {
     suspend fun setMobileData(enabled: Boolean): ShellResult =
         Shell.exec("svc data ${if (enabled) "enable" else "disable"}")
 
+    suspend fun setWifi(enabled: Boolean): ShellResult =
+        Shell.exec("svc wifi ${if (enabled) "enable" else "disable"}")
+
     suspend fun setAirplaneMode(enabled: Boolean): ShellResult {
         val r = Shell.exec("cmd connectivity airplane-mode ${if (enabled) "enable" else "disable"}")
         if (r.ok) return r

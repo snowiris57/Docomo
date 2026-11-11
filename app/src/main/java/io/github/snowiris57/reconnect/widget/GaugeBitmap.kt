@@ -95,6 +95,8 @@ object GaugeBitmap {
             textSize = s * 0.075f
             color = palette.sub
         }
+        // 長い見出しは弧に重ならないよう縮める
+        center.measureText(caption).let { w -> if (w > s * 0.5f) center.textSize *= s * 0.5f / w }
         c.drawText(caption, cx, cy - s * 0.15f, center)
 
         center.apply {

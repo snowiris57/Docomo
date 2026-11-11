@@ -49,6 +49,56 @@ data class SignalInfo(
     }
 }
 
+/** いま使っている回線 */
+enum class Route { MOBILE, WIFI }
+
+/** Wi-Fi の状態（テザリングを含む） */
+data class WifiReading(
+    val rssi: Int,
+    val linkMbps: Int?,
+    val freqMhz: Int,
+    /** "Wi-Fi 6" など。取れなければ null */
+    val standard: String?,
+    /** 位置情報の許可が無いと null */
+    val ssid: String?,
+    /** 従量制の Wi-Fi（iPhone などのテザリング）と判断できたか */
+    val tethering: Boolean,
+) {
+    /** 0.0〜1.0。RSSI -90dBm → 0、-40dBm → 1 */
+    val quality: Float get() = ((rssi + 90) / 50f).coerceIn(0f, 1f)
+
+    val band: String
+        get() = when {
+            freqMhz < 3000 -> "2.4GHz"
+            freqMhz < 5925 -> "5GHz"
+            else -> "6GHz"
+        }
+
+    val channel: Int?
+        get() = when {
+            freqMhz == 2484 -> 14
+            freqMhz in 2412..2472 -> (freqMhz - 2407) / 5
+            freqMhz in 5000..5900 -> (freqMhz - 5000) / 5
+            freqMhz in 5925..7125 -> (freqMhz - 5950) / 5
+            else -> null
+        }
+
+    /** メーター上の小見出し（例: "テザリング ・ 5GHz"） */
+    val caption: String get() = "${if (tethering) "テザリング" else "Wi-Fi"} ・ $band"
+
+    fun short(): String = "Wi-Fi $band $rssi dBm"
+
+    companion object {
+        fun rssiLabel(rssi: Int): String = when {
+            rssi >= -50 -> "とても強い"
+            rssi >= -60 -> "良好"
+            rssi >= -70 -> "普通"
+            rssi >= -80 -> "弱い"
+            else -> "とても弱い"
+        }
+    }
+}
+
 data class ProbeResult(val ok: Boolean, val ms: Long, val error: String? = null) {
     fun describe(): String = if (ok) "OK (${ms}ms)" else "NG (${error ?: "不明"})"
 }
@@ -75,6 +125,54 @@ object NetCheck {
         val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
+    /** いま主に使っている回線。Wi-Fi が既定ならWi-Fi、それ以外はモバイル */
+    fun activeRoute(ctx: Context): Route = if (onWifi(ctx)) Route.WIFI else Route.MOBILE
+
+    /** つながっている Wi-Fi の Network を探す */
+    @Suppress("DEPRECATION")
+    fun wifiNetwork(ctx: Context): Network? {
+        val cm = ctx.getSystemService(ConnectivityManager::class.java)
+        return cm.allNetworks.firstOrNull { n ->
+            val c = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+    }
+
+    /** Wi-Fi の電波・帯域・速度。つながっていなければ null */
+    @Suppress("DEPRECATION")
+    fun wifi(ctx: Context): WifiReading? {
+        val net = wifiNetwork(ctx) ?: return null
+        val cm = ctx.getSystemService(ConnectivityManager::class.java)
+        val wm = ctx.applicationContext.getSystemService(android.net.wifi.WifiManager::class.java) ?: return null
+        val info = try {
+            wm.connectionInfo
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        if (info.rssi <= -127 || info.frequency <= 0) return null
+        val standard = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            when (info.wifiStandard) {
+                4 -> "Wi-Fi 4"
+                5 -> "Wi-Fi 5"
+                6 -> "Wi-Fi 6"
+                8 -> "Wi-Fi 7"
+                else -> null
+            }
+        } else null
+        val ssid = info.ssid?.removeSurrounding("\"")?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
+        val caps = cm.getNetworkCapabilities(net)
+        val metered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
+        return WifiReading(
+            rssi = info.rssi,
+            linkMbps = info.linkSpeed.takeIf { it > 0 },
+            freqMhz = info.frequency,
+            standard = standard,
+            ssid = ssid,
+            tethering = metered,
+        )
     }
 
     /** インターネット可能なモバイル回線の Network を探す */

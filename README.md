@@ -11,6 +11,10 @@
 <img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_history_light.png" width="200" alt="履歴">
 </p>
 <p>
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_wifi_dark.png" width="200" alt="Wi-Fi（テザリング）モード">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_wide_wifi.png" width="380" alt="ウィジェット（テザリング）">
+</p>
+<p>
 <img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_tablet.png" width="560" alt="タブレット（2列＋ナビゲーションレール）">
 </p>
 
@@ -30,8 +34,9 @@
 
 | | |
 |---|---|
+| 📶 **モバイル / Wi-Fi の2モード** | 使っている回線に合わせて表示が自動で切り替わる。モバイルは RSRP・方式・通信会社、Wi-Fi は dBm・帯域・チャンネル・リンク速度・規格。iPhone などのテザリングは「テザリング」と表示。上の切り替えで、もう片方を一時的にのぞける |
 | 🛰 **パケ止まりの検知** | モバイル回線経由で `generate_204` に小さな通信を送り、届かない状態が続いたら異常と判断 |
-| 🔁 **自動で再接続** | ① モバイルデータ OFF→ON → ② だめなら機内モード ON→OFF |
+| 🔁 **自動で再接続** | モバイル: ① データ OFF→ON → ② だめなら機内モード ON→OFF。Wi-Fi: つながっているのに通信できなければ Wi-Fi OFF→ON（設定でオフにできます） |
 | 🧯 **やりすぎ防止** | 再接続後は待ち時間を入れ、失敗するたびに倍々に延長（最大30分）。1時間あたりの回数にも上限。途中で止めても無線を切ったままにしない |
 | 📈 **電波品質の推移** | 直近1時間の推移グラフに、疎通NG（赤い点）と再接続（青い破線）を表示。アプリを閉じても残ります |
 | 🗂 **履歴と統計** | 今日の再接続回数・成功率・異常検知・正常率、日ごとのタイムライン |
@@ -43,7 +48,7 @@
 | 📱 **どの画面でも** | タブレット・横向きは2列＋ナビゲーションレール。文字サイズを大きくしても崩れない |
 | ♿ **使いやすさ** | ダークモード、Material You、メーターやグラフに読み上げ用の説明、見出しの指定、触覚フィードバック |
 
-Wi-Fi・機内モード・モバイルデータ OFF の間は、監視を自動で休みます。
+Wi-Fi の間は Wi-Fi を、モバイルの間はモバイル回線を見守ります（機内モードやモバイルデータ OFF のときはモバイルの監視を休みます）。Wi-Fi の名前を表示したいときは、設定 → Wi-Fi・テザリング から位置情報を許可してください（位置そのものは使いません）。
 
 ## 必要なもの
 

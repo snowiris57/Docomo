@@ -14,7 +14,9 @@ data class Status(
     val health: Health = Health.STOPPED,
     val headline: String = "監視は停止中です",
     val detail: String = "",
+    val route: Route = Route.MOBILE,
     val signal: SignalInfo? = null,
+    val wifi: WifiReading? = null,
     val probe: ProbeResult? = null,
     val badCount: Int = 0,
     val failThreshold: Int = 2,
@@ -29,6 +31,7 @@ data class Sample(
     val latencyMs: Long?,
     val ok: Boolean?,
     val health: Health,
+    val route: Route = Route.MOBILE,
 )
 
 enum class EventType { START, STOP, DETECT, RECOVER_START, STEP, RECOVER_OK, RECOVER_FAIL, ERROR, INFO }
@@ -88,7 +91,7 @@ object MonitorState {
 
     private fun parseSample(line: String): Sample? {
         val p = line.split('\t')
-        if (p.size != 6) return null
+        if (p.size != 6 && p.size != 7) return null
         return Sample(
             time = p[0].toLongOrNull() ?: return null,
             rsrp = p[1].toIntOrNull(),
@@ -96,6 +99,7 @@ object MonitorState {
             latencyMs = p[3].toLongOrNull(),
             ok = p[4].toBooleanStrictOrNull(),
             health = runCatching { Health.valueOf(p[5]) }.getOrNull() ?: return null,
+            route = p.getOrNull(6)?.let { runCatching { Route.valueOf(it) }.getOrNull() } ?: Route.MOBILE,
         )
     }
 
@@ -130,7 +134,7 @@ object MonitorState {
         val f = sampleFile ?: return
         try {
             f.writeText(samples.value.joinToString("\n", postfix = "\n") {
-                "${it.time}\t${it.rsrp ?: ""}\t${it.quality ?: ""}\t${it.latencyMs ?: ""}\t${it.ok ?: ""}\t${it.health}"
+                "${it.time}\t${it.rsrp ?: ""}\t${it.quality ?: ""}\t${it.latencyMs ?: ""}\t${it.ok ?: ""}\t${it.health}\t${it.route}"
             })
         } catch (_: Exception) {
         }

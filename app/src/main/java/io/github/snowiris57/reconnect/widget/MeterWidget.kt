@@ -15,6 +15,8 @@ import io.github.snowiris57.reconnect.MonitorService
 import io.github.snowiris57.reconnect.MonitorState
 import io.github.snowiris57.reconnect.NetCheck
 import io.github.snowiris57.reconnect.R
+import io.github.snowiris57.reconnect.Route
+import io.github.snowiris57.reconnect.WifiReading
 import io.github.snowiris57.reconnect.SignalInfo
 import kotlin.math.roundToInt
 
@@ -35,22 +37,35 @@ class MeterWidget : AppWidgetProvider() {
 
     /** ウィジェットに表示する内容 */
     private data class Snapshot(
+        val route: Route,
+        val wifi: WifiReading?,
         val signal: SignalInfo?,
         val health: Health,
         val title: String,
         val latencyMs: Long?,
         val recoveriesToday: Int,
     ) {
+        /** いま使っている回線の品質と dBm */
+        val quality: Float? get() = if (route == Route.WIFI) wifi?.quality else signal?.quality
+        val dbm: Int? get() = if (route == Route.WIFI) wifi?.rssi else signal?.rsrp
+
         companion object {
             fun capture(ctx: Context): Snapshot {
                 val st = MonitorState.status.value
                 // 監視が止まっていてもメーターは動かす
                 val sig = (if (st.running) st.signal else null) ?: runCatching { NetCheck.signal(ctx) }.getOrNull()
+                val route = runCatching { NetCheck.activeRoute(ctx) }.getOrDefault(st.route)
+                val wifi = if (route == Route.WIFI) runCatching { NetCheck.wifi(ctx) }.getOrNull() ?: st.wifi else null
                 return Snapshot(
+                    route = route,
+                    wifi = wifi,
                     signal = sig,
                     health = if (st.running) st.health else Health.STOPPED,
                     title = when {
                         !st.running -> "監視オフ"
+                        st.health == Health.OK && route == Route.WIFI ->
+                            if (wifi?.tethering == true) "テザリング安定" else "Wi-Fi 安定"
+                        st.health == Health.BAD && route == Route.WIFI -> "Wi-Fi に問題あり"
                         st.health == Health.OK -> "通信は安定"
                         st.health == Health.BAD -> "通信に問題あり"
                         st.health == Health.RECOVERING -> "再接続中…"
@@ -90,10 +105,10 @@ class MeterWidget : AppWidgetProvider() {
 
         private fun gaugeBitmap(ctx: Context, snap: Snapshot) = GaugeBitmap.render(
             sizePx = (150 * ctx.resources.displayMetrics.density).roundToInt().coerceIn(200, 480),
-            quality = snap.signal?.quality,
-            value = snap.signal?.quality?.let { "${(it * 100).roundToInt()}" } ?: "—",
-            unit = snap.signal?.rsrp?.let { "$it dBm" } ?: "電波なし",
-            caption = snap.signal?.type ?: "",
+            quality = snap.quality,
+            value = snap.quality?.let { "${(it * 100).roundToInt()}" } ?: "—",
+            unit = snap.dbm?.let { "$it dBm" } ?: "電波なし",
+            caption = if (snap.route == Route.WIFI) snap.wifi?.caption ?: "Wi-Fi" else snap.signal?.type ?: "",
             palette = GaugeBitmap.Palette(
                 track = ContextCompat.getColor(ctx, R.color.widget_track),
                 text = ContextCompat.getColor(ctx, R.color.widget_text),
@@ -118,13 +133,26 @@ class MeterWidget : AppWidgetProvider() {
                 setTextViewText(R.id.dot, "●")
                 setTextColor(R.id.dot, healthColor(ctx, snap.health))
                 setTextViewText(R.id.title, snap.title)
+                val sub = if (snap.route == Route.WIFI) {
+                    listOf(
+                        snap.wifi?.ssid ?: if (snap.wifi?.tethering == true) "テザリング" else "Wi-Fi",
+                        snap.wifi?.band.orEmpty(),
+                    )
+                } else {
+                    listOf(snap.signal?.carrier.orEmpty(), snap.signal?.type.orEmpty())
+                }
                 setTextViewText(
                     R.id.subtitle,
-                    listOf(snap.signal?.carrier.orEmpty(), snap.signal?.type.orEmpty())
-                        .filter { it.isNotBlank() && it != "?" }.joinToString(" ・ ").ifEmpty { "モバイル回線" }
+                    sub.filter { it.isNotBlank() && it != "?" }.joinToString(" ・ ").ifEmpty { "モバイル回線" },
                 )
                 setTextViewText(R.id.latency, snap.latencyMs?.let { "$it" } ?: "—")
-                setTextViewText(R.id.recoveries, "${snap.recoveriesToday}")
+                if (snap.route == Route.WIFI) {
+                    setTextViewText(R.id.recoveries, snap.wifi?.linkMbps?.toString() ?: "—")
+                    setTextViewText(R.id.recoveries_label, "Mbps")
+                } else {
+                    setTextViewText(R.id.recoveries, "${snap.recoveriesToday}")
+                    setTextViewText(R.id.recoveries_label, "回 今日の復旧")
+                }
                 setOnClickPendingIntent(R.id.widget_root, MonitorService.openAppIntent(ctx))
                 setOnClickPendingIntent(R.id.reconnect, MonitorService.reconnectPendingIntent(ctx))
                 if (snap.health == Health.RECOVERING) {
@@ -135,9 +163,10 @@ class MeterWidget : AppWidgetProvider() {
             }
 
         private fun describe(snap: Snapshot): String {
-            val q = snap.signal?.quality ?: return "電波メーター: 電波を取得できません"
-            return "電波品質 ${(q * 100).roundToInt()}パーセント" +
-                (snap.signal.rsrp?.let { "、RSRP ${it}デシベルミリワット" } ?: "")
+            val q = snap.quality ?: return "電波メーター: 電波を取得できません"
+            val name = if (snap.route == Route.WIFI) "Wi-Fi" else "モバイル回線"
+            return "$name の電波品質 ${(q * 100).roundToInt()}パーセント" +
+                (snap.dbm?.let { "、${it}デシベルミリワット" } ?: "")
         }
 
         private fun healthLabel(h: Health) = when (h) {

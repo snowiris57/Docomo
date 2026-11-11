@@ -42,6 +42,8 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
     var airplane by remember { mutableStateOf(prefs.useAirplane) }
     var cooldown by remember { mutableFloatStateOf(prefs.cooldownSec.toFloat()) }
     var maxHour by remember { mutableFloatStateOf(prefs.maxPerHour.toFloat()) }
+    var wifiMonitor by remember { mutableStateOf(prefs.wifiMonitor) }
+    var wifiRecover by remember { mutableStateOf(prefs.wifiRecover) }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
@@ -118,6 +120,36 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
                     onChange = { maxHour = it },
                     onDone = { prefs.maxPerHour = maxHour.roundToInt() },
                 )
+            }
+        }
+        item {
+            Group("Wi-Fi・テザリング") {
+                SwitchSetting(
+                    title = "Wi-Fi も見守る",
+                    help = "Wi-Fi（iPhone のテザリングを含む）の間も、通り具合を確かめます",
+                    checked = wifiMonitor,
+                    onChange = { wifiMonitor = it; prefs.wifiMonitor = it },
+                )
+                Divider()
+                SwitchSetting(
+                    title = "Wi-Fi を自動で入れ直す",
+                    help = "つながっているのに通信できない状態が続いたら、Wi-Fi を OFF → ON します",
+                    checked = wifiRecover && wifiMonitor,
+                    onChange = { wifiRecover = it; prefs.wifiRecover = it },
+                )
+                Divider()
+                if (setup.locationGranted) {
+                    ListItem(
+                        headlineContent = { Text("Wi-Fi の名前を表示") },
+                        supportingContent = { Text("許可済み") },
+                        colors = itemColors(),
+                    )
+                } else {
+                    LinkItem(
+                        "Wi-Fi の名前を表示",
+                        "Android の決まりで、Wi-Fi 名の取得には位置情報の許可が必要です（位置は使いません）",
+                    ) { actions.requestLocation() }
+                }
             }
         }
         item {

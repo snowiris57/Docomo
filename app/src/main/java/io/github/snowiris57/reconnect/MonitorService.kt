@@ -53,6 +53,8 @@ class MonitorService : Service() {
         val detail: String,
         val signal: SignalInfo?,
         val probe: ProbeResult?,
+        val route: Route = Route.MOBILE,
+        val wifi: WifiReading? = null,
     )
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -82,7 +84,7 @@ class MonitorService : Service() {
             ACTION_RECONNECT -> {
                 if (Prefs(this).enabled) startLoopIfNeeded()
                 scope.launch {
-                    recover(Prefs(this@MonitorService), "手動", manual = true)
+                    recover(Prefs(this@MonitorService), "手動", manual = true, route = NetCheck.activeRoute(this@MonitorService))
                     if (loopJob?.isActive != true) stopSelf()
                 }
             }
@@ -119,11 +121,13 @@ class MonitorService : Service() {
                 MonitorState.addSample(
                     Sample(
                         time = System.currentTimeMillis(),
-                        rsrp = c.signal?.rsrp,
-                        quality = c.signal?.quality,
+                        // dBm（モバイルは RSRP、Wi-Fi は RSSI）
+                        rsrp = if (c.route == Route.WIFI) c.wifi?.rssi else c.signal?.rsrp,
+                        quality = if (c.route == Route.WIFI) c.wifi?.quality else c.signal?.quality,
                         latencyMs = c.probe?.takeIf { it.ok }?.ms,
                         ok = c.probe?.ok ?: if (c.health == Health.BAD) false else null,
                         health = c.health,
+                        route = c.route,
                     )
                 )
 
@@ -133,14 +137,14 @@ class MonitorService : Service() {
                     detail = "$detail（${bad}/${p.failThreshold}）"
                     if (bad == p.failThreshold) MonitorState.event(EventType.DETECT, "異常を検知: ${c.detail}")
                     if (bad >= p.failThreshold) {
-                        val wait = waitReason(p)
+                        val wait = if (c.route == Route.WIFI && !p.wifiRecover) "自動の入れ直しはオフ" else waitReason(p)
                         if (wait == null) shouldRecover = true else detail = "$detail ・ $wait"
                     }
                 }
                 publish(c.copy(detail = detail), bad, p)
 
                 if (shouldRecover) {
-                    recover(p, c.detail, manual = false)
+                    recover(p, c.detail, manual = false, route = c.route)
                     bad = 0
                 }
             }
@@ -149,15 +153,32 @@ class MonitorService : Service() {
     }
 
     private suspend fun check(p: Prefs): Check {
-        if (NetCheck.airplaneModeOn(this)) {
+        val airplane = NetCheck.airplaneModeOn(this)
+        val sig = if (airplane) null else NetCheck.signal(this)
+
+        // Wi-Fi モード（テザリングを含む）
+        if (NetCheck.activeRoute(this) == Route.WIFI) {
+            val wifi = NetCheck.wifi(this)
+            // 「テザリングは」「Wi-Fi は」と自然に読めるように
+            val name = if (wifi?.tethering == true) "テザリング" else "Wi-Fi "
+            if (!p.wifiMonitor) {
+                return Check(Health.PAUSED, "${name}に接続中", "Wi-Fi の見守りはオフです", sig, null, Route.WIFI, wifi)
+            }
+            val net = NetCheck.wifiNetwork(this)
+                ?: return Check(Health.BAD, "${name}に問題があります", "Wi-Fi が見つかりません", sig, null, Route.WIFI, wifi)
+            val probe = NetCheck.probe(net)
+            if (!probe.ok) {
+                return Check(Health.BAD, "${name}に問題があります", "つながっているのに通信できません", sig, probe, Route.WIFI, wifi)
+            }
+            return Check(Health.OK, "${name}は安定しています", "${p.intervalSec}秒ごとに見守っています", sig, probe, Route.WIFI, wifi)
+        }
+
+        // モバイルモード
+        if (airplane) {
             return Check(Health.PAUSED, "機内モード中", "機内モードの間は監視を休みます", null, null)
         }
-        val sig = NetCheck.signal(this)
         if (!NetCheck.mobileDataEnabled(this)) {
             return Check(Health.PAUSED, "モバイルデータがオフ", "オンになると監視を再開します", sig, null)
-        }
-        if (NetCheck.onWifi(this)) {
-            return Check(Health.PAUSED, "Wi-Fi に接続中", "Wi-Fi の間はモバイル回線の監視を休みます", sig, null)
         }
 
         val cell = NetCheck.cellularNetwork(this)
@@ -168,7 +189,7 @@ class MonitorService : Service() {
             return Check(Health.BAD, "通信に問題があります", "応答なし — パケ止まりの疑い", sig, probe)
         }
 
-        val rsrp = sig.rsrp
+        val rsrp = sig?.rsrp
         if (p.signalTrigger && rsrp != null && rsrp < p.rsrpThreshold) {
             return Check(Health.BAD, "電波が弱くなっています", "RSRP $rsrp dBm（閾値 ${p.rsrpThreshold}）", sig, probe)
         }
@@ -182,7 +203,9 @@ class MonitorService : Service() {
                 health = c.health,
                 headline = c.headline,
                 detail = c.detail,
+                route = c.route,
                 signal = c.signal ?: it.signal,
+                wifi = c.wifi,
                 probe = c.probe,
                 badCount = bad,
                 failThreshold = p.failThreshold,
@@ -201,19 +224,20 @@ class MonitorService : Service() {
         return null
     }
 
-    private suspend fun recover(p: Prefs, reason: String, manual: Boolean): Boolean {
+    private suspend fun recover(p: Prefs, reason: String, manual: Boolean, route: Route): Boolean {
         if (!recoverLock.tryLock()) return false
         try {
-            if (NetCheck.airplaneModeOn(this)) {
+            if (route == Route.MOBILE && NetCheck.airplaneModeOn(this)) {
                 MonitorState.event(EventType.INFO, "機内モード中のため再接続しませんでした")
                 return false
             }
             MonitorState.event(
                 EventType.RECOVER_START,
-                if (manual) "手動で再接続を開始" else "自動で再接続を開始（$reason）",
+                (if (route == Route.WIFI) "[Wi-Fi] " else "") +
+                    if (manual) "手動で再接続を開始" else "自動で再接続を開始（$reason）",
             )
 
-            val ok = runRecoverySteps(p)
+            val ok = if (route == Route.WIFI) runWifiRecovery() else runRecoverySteps(p)
 
             val now = SystemClock.elapsedRealtime()
             if (!manual) recoveryTimes.addLast(now)
@@ -274,6 +298,33 @@ class MonitorService : Service() {
         }
     }
 
+    /** Wi-Fi を OFF→ON して、つなぎ直させる（保存済みの Wi-Fi に自動で戻る） */
+    private suspend fun runWifiRecovery(): Boolean {
+        var wifiOff = false
+        try {
+            setHealth(Health.RECOVERING, "再接続しています…", "Wi-Fi を入れ直しています")
+            MonitorState.event(EventType.STEP, "Wi-Fi OFF → ON")
+            val r = Radio.setWifi(false)
+            if (!r.ok) {
+                MonitorState.event(EventType.ERROR, "操作できませんでした: ${r.output}")
+                return false
+            }
+            wifiOff = true
+            delay(3_000)
+            Radio.setWifi(true)
+            wifiOff = false
+            val deadline = SystemClock.elapsedRealtime() + 30_000
+            while (SystemClock.elapsedRealtime() < deadline) {
+                delay(4_000)
+                val net = NetCheck.wifiNetwork(this) ?: continue
+                if (NetCheck.probe(net).ok) return true
+            }
+            return false
+        } finally {
+            if (wifiOff) withContext(NonCancellable) { Radio.setWifi(true) }
+        }
+    }
+
     private suspend fun waitHealthy(timeoutMs: Long): Boolean {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
         while (SystemClock.elapsedRealtime() < deadline) {
@@ -301,7 +352,7 @@ class MonitorService : Service() {
         val st = MonitorState.status.value
         val text = listOfNotNull(
             st.headline,
-            st.signal?.short(),
+            if (st.route == Route.WIFI) st.wifi?.short() else st.signal?.short(),
             st.probe?.takeIf { it.ok }?.let { "${it.ms}ms" },
         ).joinToString(" ・ ")
         val busy = st.health == Health.RECOVERING

@@ -58,4 +58,14 @@ class Prefs(ctx: Context) {
     var widgetHintDismissed: Boolean
         get() = bool("widget_hint_dismissed", false)
         set(v) = sp.edit { putBoolean("widget_hint_dismissed", v) }
+
+    /** Wi-Fi（テザリング）も見守るか */
+    var wifiMonitor: Boolean
+        get() = bool("wifi_monitor", true)
+        set(v) = sp.edit { putBoolean("wifi_monitor", v) }
+
+    /** Wi-Fi が通じないとき Wi-Fi を OFF→ON するか */
+    var wifiRecover: Boolean
+        get() = bool("wifi_recover", true)
+        set(v) = sp.edit { putBoolean("wifi_recover", v) }
 }

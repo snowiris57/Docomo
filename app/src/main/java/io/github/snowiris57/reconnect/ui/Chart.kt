@@ -1,6 +1,10 @@
 package io.github.snowiris57.reconnect.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -42,6 +46,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import io.github.snowiris57.reconnect.Route
 import io.github.snowiris57.reconnect.Sample
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -82,6 +87,7 @@ fun SignalChart(
     val visible = remember(samples, start) { samples.filter { it.time >= start } }
 
     val line = MaterialTheme.colorScheme.primary
+    val wifiLine = MaterialTheme.colorScheme.tertiary
     val grid = MaterialTheme.colorScheme.outlineVariant
     val cursorColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
     val haptic = LocalHapticFeedback.current
@@ -139,21 +145,23 @@ fun SignalChart(
                     drawLine(SignalColors.info.copy(alpha = 0.7f), Offset(x(it), 0f), Offset(x(it), h), 1.5.dp.toPx(), pathEffect = dash)
                 }
 
-                // 欠損（null）で区切った線分ごとに描く
-                val segments = mutableListOf<MutableList<Offset>>()
+                // 欠損（null）と回線の切り替わりで区切った線分ごとに描く（モバイル/Wi-Fi で色を変える）
+                val segments = mutableListOf<Pair<Route, MutableList<Offset>>>()
                 var cur = mutableListOf<Offset>()
+                var curRoute = visible.firstOrNull()?.route ?: Route.MOBILE
                 visible.forEach { s ->
                     val q = s.quality
-                    if (q == null) {
-                        if (cur.isNotEmpty()) segments += cur
+                    if (q == null || s.route != curRoute) {
+                        if (cur.isNotEmpty()) segments += curRoute to cur
                         cur = mutableListOf()
-                    } else {
-                        cur += Offset(x(s.time), y(q))
+                        curRoute = s.route
                     }
+                    if (q != null) cur += Offset(x(s.time), y(q))
                 }
-                if (cur.isNotEmpty()) segments += cur
+                if (cur.isNotEmpty()) segments += curRoute to cur
 
-                segments.forEach { pts ->
+                segments.forEach { (route, pts) ->
+                    val line = if (route == Route.WIFI) wifiLine else line
                     if (pts.size == 1) {
                         drawCircle(line, 2.5.dp.toPx(), pts[0])
                         return@forEach
@@ -186,7 +194,7 @@ fun SignalChart(
                     val sx = x(s.time)
                     drawLine(cursorColor, Offset(sx, 0f), Offset(sx, h), 1.dp.toPx())
                     val sy = y(s.quality ?: 0f)
-                    val c = if (s.ok == false) SignalColors.bad else line
+                    val c = if (s.ok == false) SignalColors.bad else if (s.route == Route.WIFI) wifiLine else line
                     drawCircle(c.copy(alpha = 0.25f), 10.dp.toPx(), Offset(sx, sy))
                     drawCircle(c, 5.dp.toPx(), Offset(sx, sy))
                 }
@@ -204,7 +212,7 @@ fun SignalChart(
                 ) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(
-                            hm.format(Date(s.time)),
+                            hm.format(Date(s.time)) + if (s.route == Route.WIFI) "  Wi-Fi" else "  モバイル",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.7f),
                         )
@@ -226,6 +234,12 @@ fun SignalChart(
                 }
             }
         }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Legend(line, "モバイル")
+            Legend(wifiLine, "Wi-Fi")
+            Legend(SignalColors.bad, "疎通NG")
+            Legend(SignalColors.info, "再接続")
+        }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
             Text("${minutes}分前", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
@@ -237,5 +251,17 @@ fun SignalChart(
             Spacer(Modifier.weight(1f))
             Text("いま", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun Legend(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(color, CircleShape))
+        Text(
+            " $label",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

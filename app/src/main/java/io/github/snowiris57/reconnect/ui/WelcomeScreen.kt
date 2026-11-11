@@ -114,8 +114,8 @@ fun WelcomeScreen(onStart: () -> Unit, animate: Boolean = true) {
             }
             Spacer(Modifier.height(28.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Feature(Icons.Filled.Search, "見張る", "一定間隔でモバイル回線の通り具合を確かめます。Wi-Fi の間はお休み")
-                Feature(Icons.Filled.Refresh, "つなぎ直す", "パケ止まりを見つけたら、モバイルデータ → 機内モードの順に回線を入れ直します")
+                Feature(Icons.Filled.Search, "見張る", "モバイル回線も Wi-Fi（テザリング）も、一定間隔で通り具合を確かめます")
+                Feature(Icons.Filled.Refresh, "つなぎ直す", "通信が止まったら、モバイルはデータ → 機内モード、Wi-Fi は OFF → ON で入れ直します")
                 Feature(Icons.Filled.Lock, "やりすぎない", "待ち時間と回数の上限で、通信障害のときに悪化させません")
             }
             Spacer(Modifier.height(28.dp))

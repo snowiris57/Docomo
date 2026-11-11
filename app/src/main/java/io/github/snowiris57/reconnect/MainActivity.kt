@@ -86,6 +86,9 @@ class MainActivity : ComponentActivity() {
                 onboarded = true
             },
             showWelcome = { onboarded = false },
+            requestLocation = {
+                permLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            },
         )
 
         setContent {
@@ -124,6 +127,8 @@ class MainActivity : ComponentActivity() {
             canPinWidget = widgetManager().isRequestPinAppWidgetSupported,
             widgetHintDismissed = prefs.widgetHintDismissed,
             canAddTile = Build.VERSION.SDK_INT >= 33,
+            locationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED,
         )
         MeterWidget.updateAll(this)
     }

@@ -47,6 +47,8 @@ data class SetupState(
     val canPinWidget: Boolean = false,
     val widgetHintDismissed: Boolean = false,
     val canAddTile: Boolean = false,
+    /** Wi-Fi の名前を表示するための位置情報の許可 */
+    val locationGranted: Boolean = false,
 ) {
     val doneCount get() = listOf(shizuku == ShizukuStatus.GRANTED, permissions, battery).count { it }
     val complete get() = doneCount == 3
@@ -65,6 +67,7 @@ class AppActions(
     val addTile: () -> Unit = {},
     val finishOnboarding: () -> Unit = {},
     val showWelcome: () -> Unit = {},
+    val requestLocation: () -> Unit = {},
 )
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -151,7 +154,7 @@ private fun MainScaffold(
                             Tab.HOME -> HomeScreen(
                                 status, samples, events, setup, monitoring, actions,
                                 onOpenHistory = { tab = 1 },
-                                liveSignal = if (preview) status.signal else rememberLiveSignal(),
+                                live = if (preview) LiveReadings(status.route, status.signal, status.wifi) else rememberLive(),
                                 previewTouch = previewTouch,
                             )
                             Tab.HISTORY -> HistoryScreen(events, samples, onClear = actions.clearHistory)

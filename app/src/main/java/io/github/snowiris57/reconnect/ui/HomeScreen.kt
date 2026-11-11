@@ -2,6 +2,7 @@ package io.github.snowiris57.reconnect.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,6 +31,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -42,9 +47,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -52,25 +57,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import io.github.snowiris57.reconnect.DayStats
 import io.github.snowiris57.reconnect.Event
 import io.github.snowiris57.reconnect.EventType
 import io.github.snowiris57.reconnect.Health
-import io.github.snowiris57.reconnect.NetCheck
+import io.github.snowiris57.reconnect.R
+import io.github.snowiris57.reconnect.Route
 import io.github.snowiris57.reconnect.Sample
 import io.github.snowiris57.reconnect.SignalInfo
 import io.github.snowiris57.reconnect.Status
-import kotlinx.coroutines.delay
+import io.github.snowiris57.reconnect.WifiReading
 
 @Composable
 fun HomeScreen(
@@ -81,12 +84,17 @@ fun HomeScreen(
     monitoring: Boolean,
     actions: AppActions,
     onOpenHistory: () -> Unit,
-    liveSignal: SignalInfo? = rememberLiveSignal(),
+    live: LiveReadings = rememberLive(),
     previewTouch: Float? = null,
 ) {
     val stats = remember(events) { DayStats.today(events) }
     val ratio = remember(samples) { okRatio(samples) }
-    val signal = liveSignal ?: status.signal
+    val cellNow = live.cell ?: status.signal
+    val wifiNow = live.wifi ?: status.wifi
+    // 表示するモード。ふだんは使っている回線に自動で合わせ、タップで一時的にもう片方を見られる
+    var override by rememberSaveable { mutableStateOf<Route?>(null) }
+    LaunchedEffect(live.route) { override = null }
+    val shown = override ?: live.route
     // 直近30秒以内の復旧だけ波紋で祝う（アプリを開くたびに出ないように）
     val lastRecovery = remember(events) {
         events.firstOrNull { it.type == EventType.RECOVER_OK }?.time
@@ -101,9 +109,14 @@ fun HomeScreen(
 
     // 上段: 状態の把握、下段: 操作と記録
     val primary: LazyListScope.() -> Unit = {
-        item { Header(status, signal) }
+        item { Header(status, shown, cellNow, wifiNow) }
+        item {
+            ModeSwitch(active = live.route, shown = shown) { r ->
+                override = if (r == live.route) null else r
+            }
+        }
         if (!setup.complete) item { SetupCard(setup, actions) }
-        item { HeroCard(status, signal, stats, ratio, lastRecovery) }
+        item { HeroCard(status, shown, live.route, cellNow, wifiNow, stats, ratio, lastRecovery) }
     }
     val secondary: LazyListScope.() -> Unit = {
         item { ControlCard(status, monitoring, actions, reconnect) }
@@ -172,29 +185,16 @@ fun HomeScreen(
     }
 }
 
-/** 画面表示中は 2 秒ごとに電波を読み、メーターを生き生きと動かす */
 @Composable
-fun rememberLiveSignal(): SignalInfo? {
-    val ctx = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val sig by produceState<SignalInfo?>(null) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                value = runCatching { NetCheck.signal(ctx) }.getOrNull()
-                delay(2_000)
-            }
-        }
-    }
-    return sig
-}
-
-@Composable
-private fun Header(status: Status, signal: SignalInfo?) {
+private fun Header(status: Status, shown: Route, cell: SignalInfo?, wifi: WifiReading?) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("ReConnect", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() })
             Text(
-                signal?.carrier?.takeIf { it.isNotBlank() } ?: "モバイル回線の見張り番",
+                when (shown) {
+                    Route.MOBILE -> cell?.carrier?.takeIf { it.isNotBlank() } ?: "モバイル回線の見張り番"
+                    Route.WIFI -> wifi?.ssid ?: if (wifi?.tethering == true) "テザリング" else "Wi-Fi"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -203,35 +203,87 @@ private fun Header(status: Status, signal: SignalInfo?) {
     }
 }
 
+/** モバイル / Wi-Fi の切り替え。使っている回線には「●」が付く */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HeroCard(status: Status, signal: SignalInfo?, stats: DayStats, okRatio: Int?, lastRecovery: Long) {
-    val recovering = status.health == Health.RECOVERING
+private fun ModeSwitch(active: Route, shown: Route, onSelect: (Route) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        listOf(Route.MOBILE to "モバイル", Route.WIFI to "Wi-Fi").forEachIndexed { i, (r, label) ->
+            SegmentedButton(
+                selected = shown == r,
+                onClick = { onSelect(r) },
+                shape = SegmentedButtonDefaults.itemShape(i, 2),
+                icon = {
+                    Icon(
+                        painterResource(if (r == Route.WIFI) R.drawable.ic_wifi else R.drawable.ic_cell),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            ) {
+                Text(if (r == active) "$label ・ 使用中" else label, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroCard(
+    status: Status,
+    shown: Route,
+    active: Route,
+    cell: SignalInfo?,
+    wifi: WifiReading?,
+    stats: DayStats,
+    okRatio: Int?,
+    lastRecovery: Long,
+) {
+    val recovering = status.health == Health.RECOVERING && shown == active
+    val peeking = shown != active
+    val probeMs = status.probe?.takeIf { it.ok && status.running && status.route == shown }?.ms?.toString() ?: "—"
+
     SectionCard {
         Column(
             Modifier.fillMaxWidth().padding(20.dp).animateContentSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            SignalGauge(
-                quality = signal?.quality,
-                caption = signal?.type ?: "—",
-                unit = signal?.rsrp?.let { "$it dBm ・ ${SignalInfo.rsrpLabel(it)}" } ?: "電波を取得できません",
-                recovering = recovering,
-                celebrateKey = lastRecovery,
-                modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
-            )
+            when (shown) {
+                Route.MOBILE -> SignalGauge(
+                    quality = cell?.quality,
+                    caption = cell?.type ?: "モバイル",
+                    unit = cell?.rsrp?.let { "$it dBm ・ ${SignalInfo.rsrpLabel(it)}" } ?: "電波を取得できません",
+                    recovering = recovering,
+                    celebrateKey = lastRecovery,
+                    modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
+                )
+                Route.WIFI -> SignalGauge(
+                    quality = wifi?.quality,
+                    caption = wifi?.caption ?: "Wi-Fi",
+                    unit = wifi?.let { "${it.rssi} dBm ・ ${WifiReading.rssiLabel(it.rssi)}" } ?: "Wi-Fi に未接続",
+                    recovering = recovering,
+                    celebrateKey = lastRecovery,
+                    modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
+                )
+            }
             Spacer(Modifier.height(4.dp))
+            val headline = if (peeking) {
+                if (shown == Route.WIFI) "Wi-Fi の電波" else "モバイル回線の電波"
+            } else status.headline
+            val detail = if (peeking) {
+                "いまは${if (active == Route.WIFI) " Wi-Fi " else "モバイル回線"}を使っています（タップで戻ります）"
+            } else status.detail
             AnimatedContent(
-                targetState = status.headline to status.detail,
+                targetState = headline to detail,
                 transitionSpec = {
                     (fadeIn() + slideInVertically { it / 4 }) togetherWith (fadeOut() + slideOutVertically { -it / 4 })
                 },
                 label = "headline",
-            ) { (headline, detail) ->
+            ) { (h, d) ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(headline, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-                    if (detail.isNotEmpty()) {
+                    Text(h, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                    if (d.isNotEmpty()) {
                         Text(
-                            detail,
+                            d,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -246,15 +298,24 @@ private fun HeroCard(status: Status, signal: SignalInfo?, stats: DayStats, okRat
                 )
             }
             Spacer(Modifier.height(20.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricTile(
-                    "応答",
-                    status.probe?.takeIf { it.ok && status.running }?.ms?.toString() ?: "—",
-                    "ms",
-                    Modifier.weight(1f),
-                )
-                MetricTile("今日の復旧", "${stats.successes}", "回", Modifier.weight(1f))
-                MetricTile("正常率", okRatio?.toString() ?: "—", if (okRatio != null) "%" else "", Modifier.weight(1f))
+            Crossfade(targetState = shown, label = "tiles") { mode ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MetricTile("応答", probeMs, "ms", Modifier.weight(1f))
+                    when (mode) {
+                        Route.MOBILE -> {
+                            MetricTile("今日の復旧", "${stats.successes}", "回", Modifier.weight(1f))
+                            MetricTile("正常率", okRatio?.toString() ?: "—", if (okRatio != null) "%" else "", Modifier.weight(1f))
+                        }
+                        Route.WIFI -> {
+                            MetricTile("リンク速度", wifi?.linkMbps?.toString() ?: "—", "Mbps", Modifier.weight(1f))
+                            MetricTile(
+                                wifi?.standard ?: "チャンネル",
+                                wifi?.channel?.let { "ch $it" } ?: "—", "",
+                                Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

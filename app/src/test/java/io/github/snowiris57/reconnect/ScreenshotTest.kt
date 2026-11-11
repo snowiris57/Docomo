@@ -114,10 +114,28 @@ class ScreenshotTest {
         app(false, ready)
     }
 
+    private val tether = WifiReading(
+        rssi = -52, linkMbps = 866, freqMhz = 2437, standard = "Wi-Fi 6", ssid = "Y's_iPhone", tethering = true,
+    )
+
+    private fun wifiMode() {
+        MonitorState.status.value = MonitorState.status.value.copy(
+            route = Route.WIFI, wifi = tether, headline = "テザリングは安定しています",
+            detail = "15秒ごとに見守っています", probe = ProbeResult(true, 38),
+        )
+        // 直近の一部を Wi-Fi に
+        MonitorState.samples.value = MonitorState.samples.value.mapIndexed { i, s ->
+            if (i >= 160) s.copy(route = Route.WIFI, quality = 0.74f + 0.04f * kotlin.math.sin(i / 5f), rsrp = -52) else s
+        }
+    }
+
+    @Test fun home_wifi_light() { wifiMode(); app(false, ready, tall = true) }
+    @Test fun home_wifi_dark() { wifiMode(); app(true, ready) }
+
     @Test fun home_widget_hint() = app(false, ready.copy(canPinWidget = true), tall = true)
     @Test fun settings_dark() = app(true, ready, tab = 2)
 
-    private fun widget(layout: Int, dark: Boolean, wide: Boolean) {
+    private fun widget(layout: Int, dark: Boolean, wide: Boolean, wifi: Boolean = false) {
         paparazzi.unsafeUpdateConfig(
             deviceConfig = DeviceConfig.PIXEL_6.copy(
                 nightMode = if (dark) NightMode.NIGHT else NightMode.NOTNIGHT,
@@ -137,7 +155,11 @@ class ScreenshotTest {
             addView(v, FrameLayout.LayoutParams(((if (wide) 330 else 160) * d).toInt(), (160 * d).toInt(), Gravity.CENTER))
         }
         val gauge = GaugeBitmap.render(
-            sizePx = 400, quality = sig.quality, value = "72", unit = "-97 dBm", caption = "5G NSA",
+            sizePx = 400,
+            quality = if (wifi) tether.quality else sig.quality,
+            value = if (wifi) "${(tether.quality * 100).toInt()}" else "72",
+            unit = if (wifi) "-52 dBm" else "-97 dBm",
+            caption = if (wifi) tether.caption else "5G NSA",
             palette = GaugeBitmap.Palette(
                 track = ctx.getColor(R.color.widget_track), text = ctx.getColor(R.color.widget_text),
                 sub = ctx.getColor(R.color.widget_sub), knob = ctx.getColor(R.color.widget_bg),
@@ -146,9 +168,17 @@ class ScreenshotTest {
         v.findViewById<ImageView>(R.id.gauge).setImageBitmap(gauge)
         if (wide) {
             v.findViewById<TextView>(R.id.dot).setTextColor(GaugeBitmap.GOOD)
-            v.findViewById<TextView>(R.id.subtitle).text = "NTT DOCOMO ・ 5G NSA"
-            v.findViewById<TextView>(R.id.latency).text = "42"
-            v.findViewById<TextView>(R.id.recoveries).text = "1"
+            if (wifi) {
+                v.findViewById<TextView>(R.id.title).text = "テザリング安定"
+                v.findViewById<TextView>(R.id.subtitle).text = "Y's_iPhone ・ 2.4GHz"
+                v.findViewById<TextView>(R.id.latency).text = "38"
+                v.findViewById<TextView>(R.id.recoveries).text = "866"
+                v.findViewById<TextView>(R.id.recoveries_label).text = "Mbps"
+            } else {
+                v.findViewById<TextView>(R.id.subtitle).text = "NTT DOCOMO ・ 5G NSA"
+                v.findViewById<TextView>(R.id.latency).text = "42"
+                v.findViewById<TextView>(R.id.recoveries).text = "1"
+            }
         } else {
             v.findViewById<TextView>(R.id.status).apply { text = "● 正常"; setTextColor(GaugeBitmap.GOOD) }
         }
@@ -159,4 +189,5 @@ class ScreenshotTest {
     @Test fun widget_small_dark() = widget(R.layout.widget_small, true, false)
     @Test fun widget_wide_light() = widget(R.layout.widget_wide, false, true)
     @Test fun widget_wide_dark() = widget(R.layout.widget_wide, true, true)
+    @Test fun widget_wide_wifi() = widget(R.layout.widget_wide, false, true, wifi = true)
 }
