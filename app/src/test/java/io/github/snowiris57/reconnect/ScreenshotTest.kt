@@ -15,7 +15,7 @@ import io.github.snowiris57.reconnect.ui.ReConnectApp
 import io.github.snowiris57.reconnect.ui.ReConnectTheme
 import io.github.snowiris57.reconnect.ui.SetupState
 import io.github.snowiris57.reconnect.ui.ShizukuStatus
-import io.github.snowiris57.reconnect.widget.GaugeBitmap
+import io.github.snowiris57.reconnect.widget.MeterWidget
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -145,13 +145,17 @@ class ScreenshotTest {
     @Test fun home_widget_hint() = app(false, ready.copy(canPinWidget = true), tall = true)
     @Test fun settings_dark() = app(true, ready, tab = 2)
 
-    private fun widget(layout: Int, dark: Boolean, wide: Boolean, wifi: Boolean = false) {
+    /**
+     * ウィジェットを描く。実機の 2×2 はだいたい 150×150dp。
+     * [w]・[h] は dp。中身は MeterWidget と同じ関数で作る。
+     */
+    private fun widget(layout: Int, snap: MeterWidget.Snapshot, w: Int, h: Int, dark: Boolean = true) {
         paparazzi.unsafeUpdateConfig(
             deviceConfig = DeviceConfig.PIXEL_6.copy(
                 nightMode = if (dark) NightMode.NIGHT else NightMode.NOTNIGHT,
-                screenWidth = if (wide) 1200 else 700,
-                screenHeight = 700,
-                orientation = if (wide) ScreenOrientation.LANDSCAPE else ScreenOrientation.PORTRAIT,
+                screenWidth = ((w + 40) * 2.625f).toInt(),
+                screenHeight = ((h + 40) * 2.625f).toInt(),
+                orientation = if (w > h) ScreenOrientation.LANDSCAPE else ScreenOrientation.PORTRAIT,
             )
         )
         val ctx = paparazzi.context
@@ -162,44 +166,50 @@ class ScreenshotTest {
                 GradientDrawable.Orientation.TL_BR,
                 if (dark) intArrayOf(0xFF1B2735.toInt(), 0xFF090A0F.toInt()) else intArrayOf(0xFFB8E1DD.toInt(), 0xFFE9D8F5.toInt()),
             )
-            addView(v, FrameLayout.LayoutParams(((if (wide) 330 else 160) * d).toInt(), (160 * d).toInt(), Gravity.CENTER))
+            addView(v, FrameLayout.LayoutParams((w * d).toInt(), (h * d).toInt(), Gravity.CENTER))
         }
-        val gauge = GaugeBitmap.render(
-            sizePx = 400,
-            quality = if (wifi) Quality.combined(tether.quality, slowProbe) else sig.quality,
-            value = if (wifi) "${((Quality.combined(tether.quality, slowProbe) ?: 0f) * 100).toInt()}" else "72",
-            unit = if (wifi) "-24 dBm ・ 77 Mbps" else "-97 dBm",
-            caption = if (wifi) tether.caption else "5G NSA",
-            palette = GaugeBitmap.Palette(
-                track = ctx.getColor(R.color.widget_track), text = ctx.getColor(R.color.widget_text),
-                sub = ctx.getColor(R.color.widget_sub), knob = ctx.getColor(R.color.widget_bg),
-            ),
-        )
-        v.findViewById<ImageView>(R.id.gauge).setImageBitmap(gauge)
-        if (wide) {
-            v.findViewById<TextView>(R.id.dot).setTextColor(GaugeBitmap.GOOD)
-            if (wifi) {
-                v.findViewById<TextView>(R.id.dot).setTextColor(GaugeBitmap.WARN)
-                v.findViewById<TextView>(R.id.title).text = "テザリング不安定"
-                v.findViewById<TextView>(R.id.subtitle).text = "Y's_iPhone ・ 2.4GHz"
-                v.findViewById<TextView>(R.id.latency).text = "486"
-                v.findViewById<TextView>(R.id.latency_label).text = "ms ネット"
-                v.findViewById<TextView>(R.id.recoveries).text = "23"
-                v.findViewById<TextView>(R.id.recoveries_label).text = "ms Wi-Fi"
-            } else {
-                v.findViewById<TextView>(R.id.subtitle).text = "NTT DOCOMO ・ 5G NSA"
-                v.findViewById<TextView>(R.id.latency).text = "42"
-                v.findViewById<TextView>(R.id.recoveries).text = "1"
+        val t = MeterWidget.texts(ctx, snap)
+        v.setBackgroundResource(MeterWidget.background(snap.health))
+        v.findViewById<ImageView>(R.id.gauge).setImageBitmap(MeterWidget.gaugeBitmap(ctx, snap))
+        v.findViewById<TextView>(R.id.value).apply { text = t.value; setTextColor(t.valueColor) }
+        v.findViewById<TextView>(R.id.status).apply { text = t.status; setTextColor(t.statusColor) }
+        if (layout != R.layout.widget_small) {
+            v.findViewById<TextView>(R.id.side).apply { text = t.side; setTextColor(t.valueColor) }
+            v.findViewById<TextView>(R.id.line1).text = t.line1
+            val wide = layout == R.layout.widget_wide
+            v.findViewById<TextView>(R.id.line2).text = if (wide) t.line2Wide else t.line2
+            v.findViewById<TextView>(R.id.line3).apply {
+                text = t.line3
+                visibility = if (wide && t.line3.isNotEmpty()) android.view.View.VISIBLE else android.view.View.GONE
             }
-        } else {
-            v.findViewById<TextView>(R.id.status).apply { text = "● 正常"; setTextColor(GaugeBitmap.GOOD) }
+            v.findViewById<TextView>(R.id.latency).text = t.latency
         }
         paparazzi.snapshot(stage)
     }
 
-    @Test fun widget_small_light() = widget(R.layout.widget_small, false, false)
-    @Test fun widget_small_dark() = widget(R.layout.widget_small, true, false)
-    @Test fun widget_wide_light() = widget(R.layout.widget_wide, false, true)
-    @Test fun widget_wide_dark() = widget(R.layout.widget_wide, true, true)
-    @Test fun widget_wide_wifi() = widget(R.layout.widget_wide, false, true, wifi = true)
+    /** 実機のスクリーンショットと同じ状況（iPhone のテザリング、-29 dBm、ネット 325ms） */
+    private val wifiSnap = MeterWidget.Snapshot(
+        route = Route.WIFI,
+        wifi = tether.copy(rssi = -29, linkMbps = 68),
+        probe = ProbeResult(true, 325, hopMs = 9),
+        signal = sig, health = Health.OK, recoveriesToday = 0,
+    )
+    private val mobileSnap = MeterWidget.Snapshot(
+        route = Route.MOBILE, wifi = null, probe = ProbeResult(true, 42),
+        signal = sig, health = Health.OK, recoveriesToday = 1,
+    )
+
+    @Test fun widget_meter_wifi() = widget(R.layout.widget_meter, wifiSnap, 150, 150)
+    @Test fun widget_meter_wifi_unstable() = widget(
+        R.layout.widget_meter, wifiSnap.copy(health = Health.UNSTABLE, probe = slowProbe, wifi = tether), 150, 150,
+    )
+    @Test fun widget_meter_wifi_noname() = widget(R.layout.widget_meter, wifiSnap.copy(wifi = wifiSnap.wifi?.copy(ssid = null)), 150, 150)
+    @Test fun widget_meter_mobile() = widget(R.layout.widget_meter, mobileSnap, 150, 150)
+    @Test fun widget_meter_short() = widget(R.layout.widget_meter, wifiSnap, 130, 135)
+    @Test fun widget_meter_off() = widget(
+        R.layout.widget_meter, mobileSnap.copy(health = Health.STOPPED, probe = null), 150, 150, dark = false,
+    )
+    @Test fun widget_small() = widget(R.layout.widget_small, wifiSnap, 110, 110)
+    @Test fun widget_wide_wifi() = widget(R.layout.widget_wide, wifiSnap, 320, 150)
+    @Test fun widget_wide_mobile() = widget(R.layout.widget_wide, mobileSnap.copy(health = Health.BAD, probe = ProbeResult(false, 0)), 320, 150)
 }

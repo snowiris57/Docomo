@@ -8,133 +8,120 @@ import android.graphics.RectF
 import android.graphics.SweepGradient
 import android.graphics.Typeface
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
  * ウィジェット用のメーターをビットマップに描く（RemoteViews はカスタム描画できないため）。
- * アプリ内の Compose 版メーター（ui/Gauge.kt）と同じデザインにしている。
+ * TetherPulse のメーターと同じく、赤→黄→緑の弧に針で値を指す形。目盛りは通信品質の 0〜100。
  */
 object GaugeBitmap {
     const val BAD = 0xFFEF4444.toInt()
     const val WARN = 0xFFF59E0B.toInt()
     const val GOOD = 0xFF22C55E.toInt()
 
+    /** 弧の始まり（左下）と角度の幅。下側が開いた馬てい形 */
+    private const val START = 150f
+    private const val SWEEP = 240f
+
+    /** 高さ ÷ 幅 */
+    const val ASPECT = 0.74f
+
     data class Palette(val track: Int, val text: Int, val sub: Int, val knob: Int)
 
-    fun render(
-        sizePx: Int,
-        quality: Float?,
-        value: String,
-        unit: String,
-        caption: String,
-        palette: Palette,
-    ): Bitmap {
-        val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    /**
+     * @param widthPx ビットマップの幅。高さは [ASPECT] 倍
+     * @param quality 0..1。null なら針を出さない（電波なし）
+     * @param label 針の軸の下に出す小さな文字（例: "品質"）
+     */
+    fun render(widthPx: Int, quality: Float?, label: String, palette: Palette): Bitmap {
+        val w = widthPx.toFloat()
+        val h = (w * ASPECT).roundToInt()
+        val bmp = Bitmap.createBitmap(widthPx, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val s = sizePx.toFloat()
-        val cx = s / 2
-        val cy = s / 2
-        val stroke = s * 0.075f
-        val inset = stroke / 2 + s * 0.04f
-        val rect = RectF(inset, inset, s - inset, s - inset)
-        val r = rect.width() / 2
 
-        // 背景トラック
-        val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val stroke = w * 0.032f
+        val r = w * 0.40f
+        val cx = w / 2
+        val cy = stroke + r + w * 0.02f
+        val rect = RectF(cx - r, cy - r, cx + r, cy + r)
+
+        // 弧（全体を赤→黄→緑。針が今の値を指す）
+        val f = SWEEP / 360f
+        val shader = SweepGradient(
+            cx, cy,
+            intArrayOf(BAD, BAD, WARN, GOOD, GOOD, BAD),
+            floatArrayOf(0f, 0.04f * f, 0.36f * f, 0.68f * f, f, 1f),
+        ).apply { setLocalMatrix(Matrix().apply { setRotate(START, cx, cy) }) }
+        val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = stroke
             strokeCap = Paint.Cap.ROUND
-            color = palette.track
+            this.shader = shader
         }
-        c.drawArc(rect, 135f, 270f, false, track)
+        c.drawArc(rect, START, SWEEP, false, arc)
 
-        // 目盛り
+        // 目盛り: 5 ごとに短く、25 ごとに長く
         val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            strokeWidth = s * 0.008f
             strokeCap = Paint.Cap.ROUND
             color = palette.sub
-            alpha = 90
         }
-        // 目盛りの数字（0・25・50・75・100）
-        val scale = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textAlign = Paint.Align.CENTER
-            textSize = s * 0.052f
-            color = palette.sub
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        }
-        for (k in 0..4) {
-            val a = Math.toRadians(135.0 + 270.0 * k / 4)
-            val rr = r - stroke * 2.35f
-            c.drawText("${k * 25}", cx + rr * cos(a).toFloat(), cy + rr * sin(a).toFloat() + scale.textSize * 0.35f, scale)
-        }
-
-        // 目盛り: 5 ごとに細かく、25 ごとに長く
         for (i in 0..20) {
             val major = i % 5 == 0
-            val a = Math.toRadians(135.0 + 270.0 * i / 20)
-            val r1 = r - stroke * 0.95f
-            val r2 = r - stroke * (if (major) 1.6f else 1.25f)
-            tick.strokeWidth = s * (if (major) 0.009f else 0.005f)
+            val a = Math.toRadians((START + SWEEP * i / 20).toDouble())
+            val r1 = r - stroke * 1.1f
+            val r2 = r1 - w * (if (major) 0.07f else 0.035f)
+            tick.strokeWidth = w * (if (major) 0.011f else 0.006f)
+            tick.alpha = if (major) 230 else 130
             c.drawLine(
                 cx + r1 * cos(a).toFloat(), cy + r1 * sin(a).toFloat(),
                 cx + r2 * cos(a).toFloat(), cy + r2 * sin(a).toFloat(), tick,
             )
         }
 
-        // 値の弧（赤→黄→緑のグラデーション）
+        // 目盛りの数字（0・25・50・75・100）を内側に
+        val scale = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = w * 0.085f
+            color = palette.sub
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        }
+        for (k in 0..4) {
+            val a = Math.toRadians((START + SWEEP * k / 4).toDouble())
+            val rr = r - stroke * 1.1f - w * 0.16f
+            c.drawText("${k * 25}", cx + rr * cos(a).toFloat(), cy + rr * sin(a).toFloat() + scale.textSize * 0.36f, scale)
+        }
+
+        // 針と軸
+        val hubR = w * 0.035f
         if (quality != null) {
             val q = quality.coerceIn(0f, 1f)
-            val shader = SweepGradient(
-                cx, cy,
-                intArrayOf(BAD, WARN, GOOD, GOOD, BAD, BAD),
-                floatArrayOf(0f, 0.22f, 0.48f, 0.875f, 0.876f, 1f),
-            ).apply { setLocalMatrix(Matrix().apply { setRotate(135f, cx, cy) }) }
-            val prog = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                style = Paint.Style.STROKE
-                strokeWidth = stroke
+            val a = Math.toRadians((START + SWEEP * q).toDouble())
+            val len = r - stroke * 1.4f
+            val needle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                strokeWidth = w * 0.022f
                 strokeCap = Paint.Cap.ROUND
-                this.shader = shader
+                color = palette.text
             }
-            c.drawArc(rect, 135f, maxOf(270f * q, 0.5f), false, prog)
-
-            val a = Math.toRadians(135.0 + 270.0 * q)
-            val kx = cx + r * cos(a).toFloat()
-            val ky = cy + r * sin(a).toFloat()
-            c.drawCircle(kx, ky, stroke * 0.42f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.knob })
-            c.drawCircle(kx, ky, stroke * 0.24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorAt(q) })
+            c.drawLine(
+                cx + hubR * cos(a).toFloat(), cy + hubR * sin(a).toFloat(),
+                cx + len * cos(a).toFloat(), cy + len * sin(a).toFloat(), needle,
+            )
         }
+        c.drawCircle(cx, cy, hubR, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.knob })
+        c.drawCircle(cx, cy, hubR, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = w * 0.016f
+            color = if (quality != null) palette.text else palette.sub
+        })
 
-        // 中央のテキスト
-        val center = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
-        center.apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            textSize = s * 0.065f
+        // 軸の下の小さな文字
+        val lbl = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = w * 0.07f
             color = palette.sub
         }
-        // 長い見出しは目盛りの数字に重ならないよう縮める
-        center.measureText(caption).let { w -> if (w > s * 0.42f) center.textSize *= s * 0.42f / w }
-        c.drawText(caption, cx, cy - s * 0.12f, center)
-
-        center.apply {
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = s * 0.2f
-            color = palette.text
-        }
-        val valueWidth = center.measureText(value)
-        center.textSize.let { full ->
-            // 長い文字は縮める
-            val maxW = s * 0.4f
-            if (valueWidth > maxW) center.textSize = full * maxW / valueWidth
-        }
-        c.drawText(value, cx, cy + s * 0.065f, center)
-
-        center.apply {
-            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-            textSize = s * 0.058f
-            color = palette.sub
-        }
-        center.measureText(unit).let { w -> if (w > s * 0.36f) center.textSize *= s * 0.36f / w }
-        c.drawText(unit, cx, cy + s * 0.14f, center)
+        c.drawText(label, cx, cy + hubR + w * 0.1f, lbl)
         return bmp
     }
 

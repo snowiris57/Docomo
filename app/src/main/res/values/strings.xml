@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">ReConnect</string>
     <string name="channel_name">回線の見守り</string>
-    <string name="widget_name">電波メーター</string>
-    <string name="widget_desc">電波の強さをメーターで表示。横に広げると状態と再接続ボタンも出ます</string>
+    <string name="widget_name">通信品質メーター</string>
+    <string name="widget_desc">通信品質をメーターで表示。Wi-Fi 名・速度・応答時間・再接続ボタンつき</string>
 </resources>

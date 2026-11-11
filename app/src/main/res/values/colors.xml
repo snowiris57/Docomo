@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="window_bg">#F4FBF8</color>
-    <color name="widget_bg">#F4F7F6</color>
-    <color name="widget_text">#141B1A</color>
-    <color name="widget_sub">#5A6664</color>
-    <color name="widget_track">#DCE4E2</color>
-    <color name="widget_btn_bg">#CDEEE7</color>
-    <color name="widget_btn_text">#00382F</color>
+
+    <!-- ウィジェットは TetherPulse と同じく、昼も夜も暗い色 -->
+    <color name="widget_bg">#1B2020</color>
+    <color name="widget_text">#EEF3F1</color>
+    <color name="widget_sub">#97A3A0</color>
+    <color name="widget_track">#2E3836</color>
+
+    <!-- 状態ごとの枠の色 -->
+    <color name="widget_edge_ok">#3E9B57</color>
+    <color name="widget_edge_warn">#B98320</color>
+    <color name="widget_edge_bad">#C0443F</color>
+    <color name="widget_edge_busy">#3B74D1</color>
+    <color name="widget_edge_idle">#3A4543</color>
 </resources>

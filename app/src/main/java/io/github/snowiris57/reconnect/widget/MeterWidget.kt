@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.util.SizeF
+import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import io.github.snowiris57.reconnect.DayStats
@@ -18,13 +19,14 @@ import io.github.snowiris57.reconnect.ProbeResult
 import io.github.snowiris57.reconnect.Quality
 import io.github.snowiris57.reconnect.R
 import io.github.snowiris57.reconnect.Route
-import io.github.snowiris57.reconnect.WifiReading
 import io.github.snowiris57.reconnect.SignalInfo
+import io.github.snowiris57.reconnect.WifiReading
 import kotlin.math.roundToInt
 
 /**
- * 電波メーターのホーム画面ウィジェット。
- * 2×2 ではメーターのみ、横に広げると状態・応答速度・再接続ボタンを表示する。
+ * 通信品質メーターのホーム画面ウィジェット（TetherPulse のメーターと同じ並び）。
+ * 標準: 見出し・メーター・品質・Wi-Fi 名・速度・状態と応答。
+ * 小さいとき: メーターと品質・状態だけ。横長: 左にメーター、右に数字と文字。
  */
 class MeterWidget : AppWidgetProvider() {
 
@@ -37,15 +39,13 @@ class MeterWidget : AppWidgetProvider() {
         update(context, manager, id, Snapshot.capture(context))
     }
 
-    /** ウィジェットに表示する内容 */
-    private data class Snapshot(
+    /** ウィジェットに表示する内容（画面のテストからも使う） */
+    data class Snapshot(
         val route: Route,
         val wifi: WifiReading?,
         val probe: ProbeResult?,
         val signal: SignalInfo?,
         val health: Health,
-        val title: String,
-        val latencyMs: Long?,
         val recoveriesToday: Int,
     ) {
         /** いま使っている回線の品質と dBm */
@@ -65,29 +65,30 @@ class MeterWidget : AppWidgetProvider() {
                     probe = st.probe?.takeIf { st.running && st.route == route },
                     signal = sig,
                     health = if (st.running) st.health else Health.STOPPED,
-                    title = when {
-                        !st.running -> "監視オフ"
-                        st.health == Health.UNSTABLE -> when {
-                            route != Route.WIFI -> "通信が不安定"
-                            wifi?.tethering == true -> "テザリング不安定"
-                            else -> "Wi-Fi 不安定"
-                        }
-                        st.health == Health.OK && route == Route.WIFI ->
-                            if (wifi?.tethering == true) "テザリング安定" else "Wi-Fi 安定"
-                        st.health == Health.BAD && route == Route.WIFI -> "Wi-Fi に問題あり"
-                        st.health == Health.OK -> "通信は安定"
-                        st.health == Health.BAD -> "通信に問題あり"
-                        st.health == Health.RECOVERING -> "再接続中…"
-                        else -> st.headline
-                    },
-                    latencyMs = st.probe?.takeIf { it.ok && st.running }?.ms,
                     recoveriesToday = DayStats.today(MonitorState.events.value).successes,
                 )
             }
         }
     }
 
+    /** 文字の中身（レイアウトに依らない） */
+    data class Texts(
+        val value: String,
+        val valueColor: Int,
+        val side: String,
+        val line1: String,
+        val line2: String,
+        /** 横長のとき: 2 行目に足すもの・3 行目 */
+        val line2Wide: String,
+        val line3: String,
+        val status: String,
+        val statusColor: Int,
+        val latency: String,
+    )
+
     companion object {
+        private const val SEP = " · "
+
         fun updateAll(ctx: Context) {
             val manager = AppWidgetManager.getInstance(ctx) ?: return
             val ids = manager.getAppWidgetIds(ComponentName(ctx, MeterWidget::class.java))
@@ -98,86 +99,122 @@ class MeterWidget : AppWidgetProvider() {
 
         private fun update(ctx: Context, manager: AppWidgetManager, id: Int, snap: Snapshot) {
             val gauge = gaugeBitmap(ctx, snap)
+            val t = texts(ctx, snap)
             val views = if (Build.VERSION.SDK_INT >= 31) {
+                // 入る中でいちばん大きいものを Android が選ぶ
                 RemoteViews(
                     mapOf(
-                        SizeF(100f, 100f) to small(ctx, snap, gauge),
-                        SizeF(230f, 100f) to wide(ctx, snap, gauge),
+                        SizeF(100f, 100f) to build(ctx, R.layout.widget_small, snap, t, gauge),
+                        SizeF(120f, 135f) to build(ctx, R.layout.widget_meter, snap, t, gauge),
+                        SizeF(250f, 110f) to build(ctx, R.layout.widget_wide, snap, t, gauge),
                     )
                 )
             } else {
-                val minWidth = manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
-                if (minWidth >= 230) wide(ctx, snap, gauge) else small(ctx, snap, gauge)
+                val o = manager.getAppWidgetOptions(id)
+                val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+                val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
+                val layout = when {
+                    w >= 250 -> R.layout.widget_wide
+                    h in 1 until 135 -> R.layout.widget_small
+                    else -> R.layout.widget_meter
+                }
+                build(ctx, layout, snap, t, gauge)
             }
             manager.updateAppWidget(id, views)
         }
 
-        private fun gaugeBitmap(ctx: Context, snap: Snapshot) = GaugeBitmap.render(
-            sizePx = (150 * ctx.resources.displayMetrics.density).roundToInt().coerceIn(200, 480),
+        fun gaugeBitmap(ctx: Context, snap: Snapshot) = GaugeBitmap.render(
+            widthPx = (150 * ctx.resources.displayMetrics.density).roundToInt().coerceIn(240, 520),
             quality = snap.quality,
-            value = snap.quality?.let { "${(it * 100).roundToInt()}" } ?: "—",
-            unit = snap.dbm?.let { d -> "$d dBm" + (snap.wifi?.speedText?.takeIf { snap.route == Route.WIFI }?.let { " ・ $it" } ?: "") } ?: "電波なし",
-            caption = if (snap.route == Route.WIFI) snap.wifi?.caption ?: "Wi-Fi" else snap.signal?.type ?: "",
-            palette = GaugeBitmap.Palette(
-                track = ContextCompat.getColor(ctx, R.color.widget_track),
-                text = ContextCompat.getColor(ctx, R.color.widget_text),
-                sub = ContextCompat.getColor(ctx, R.color.widget_sub),
-                knob = ContextCompat.getColor(ctx, R.color.widget_bg),
-            ),
+            label = "品質",
+            palette = palette(ctx),
         )
 
-        private fun small(ctx: Context, snap: Snapshot, gauge: android.graphics.Bitmap) =
-            RemoteViews(ctx.packageName, R.layout.widget_small).apply {
-                setImageViewBitmap(R.id.gauge, gauge)
-                setContentDescription(R.id.gauge, describe(snap))
-                setTextViewText(R.id.status, "● ${healthLabel(snap.health)}")
-                setTextColor(R.id.status, healthColor(ctx, snap.health))
-                setOnClickPendingIntent(R.id.widget_root, MonitorService.openAppIntent(ctx))
-            }
+        fun palette(ctx: Context) = GaugeBitmap.Palette(
+            track = ContextCompat.getColor(ctx, R.color.widget_track),
+            text = ContextCompat.getColor(ctx, R.color.widget_text),
+            sub = ContextCompat.getColor(ctx, R.color.widget_sub),
+            knob = ContextCompat.getColor(ctx, R.color.widget_bg),
+        )
 
-        private fun wide(ctx: Context, snap: Snapshot, gauge: android.graphics.Bitmap) =
-            RemoteViews(ctx.packageName, R.layout.widget_wide).apply {
+        fun texts(ctx: Context, snap: Snapshot): Texts {
+            val q = snap.quality
+            val wifi = snap.wifi.takeIf { snap.route == Route.WIFI }
+            val sub = ContextCompat.getColor(ctx, R.color.widget_sub)
+            val net = snap.probe?.let { p -> if (p.ok) "${p.ms}ms" else "応答なし" }
+            return Texts(
+                value = q?.let { "${(it * 100).roundToInt()}" } ?: "—",
+                valueColor = q?.let { GaugeBitmap.colorAt(it) } ?: sub,
+                side = snap.dbm?.let { "$it dBm" } ?: "電波なし",
+                line1 = if (wifi != null) {
+                    (wifi.ssid ?: if (wifi.tethering) "テザリング" else "Wi-Fi") + SEP + wifi.band
+                } else {
+                    listOfNotNull(snap.signal?.carrier, snap.signal?.type)
+                        .filter { it.isNotBlank() && it != "?" }
+                        .joinToString(SEP)
+                        .ifEmpty { "モバイル回線" }
+                },
+                line2 = if (wifi != null) {
+                    listOfNotNull(wifi.speedText, wifi.standard).joinToString(SEP)
+                } else {
+                    "今日の復旧 ${snap.recoveriesToday} 回"
+                },
+                line2Wide = if (wifi != null) {
+                    listOfNotNull(wifi.speedText, wifi.standard, wifi.channel?.let { "ch $it" }).joinToString(SEP)
+                } else {
+                    "今日の復旧 ${snap.recoveriesToday} 回"
+                },
+                line3 = if (wifi != null) snap.probe?.hopMs?.let { "Wi-Fi 区間 ${it}ms" }.orEmpty() else "",
+                status = "● ${healthLabel(snap.health)}",
+                statusColor = healthColor(ctx, snap.health),
+                latency = when {
+                    net == null -> ""
+                    wifi != null -> "ネット $net"
+                    else -> "応答 $net"
+                },
+            )
+        }
+
+        fun background(h: Health): Int = when (h) {
+            Health.OK -> R.drawable.widget_bg_ok
+            Health.UNSTABLE -> R.drawable.widget_bg_warn
+            Health.BAD -> R.drawable.widget_bg_bad
+            Health.RECOVERING -> R.drawable.widget_bg_busy
+            Health.PAUSED, Health.STOPPED -> R.drawable.widget_bg_idle
+        }
+
+        private fun build(ctx: Context, layout: Int, snap: Snapshot, t: Texts, gauge: android.graphics.Bitmap) =
+            RemoteViews(ctx.packageName, layout).apply {
+                setInt(R.id.widget_root, "setBackgroundResource", background(snap.health))
                 setImageViewBitmap(R.id.gauge, gauge)
                 setContentDescription(R.id.gauge, describe(snap))
-                setTextViewText(R.id.dot, "●")
-                setTextColor(R.id.dot, healthColor(ctx, snap.health))
-                setTextViewText(R.id.title, snap.title)
-                val sub = if (snap.route == Route.WIFI) {
-                    listOf(
-                        snap.wifi?.ssid ?: if (snap.wifi?.tethering == true) "テザリング" else "Wi-Fi",
-                        snap.wifi?.band.orEmpty(),
-                    )
-                } else {
-                    listOf(snap.signal?.carrier.orEmpty(), snap.signal?.type.orEmpty())
-                }
-                setTextViewText(
-                    R.id.subtitle,
-                    sub.filter { it.isNotBlank() && it != "?" }.joinToString(" ・ ").ifEmpty { "モバイル回線" },
-                )
-                setTextViewText(R.id.latency, snap.latencyMs?.let { "$it" } ?: "—")
-                if (snap.route == Route.WIFI) {
-                    // TetherPulse と同じく「ネット」と「Wi-Fi 区間」の応答時間
-                    setTextViewText(R.id.latency_label, "ms ネット")
-                    setTextViewText(R.id.recoveries, snap.probe?.hopMs?.toString() ?: "—")
-                    setTextViewText(R.id.recoveries_label, "ms Wi-Fi")
-                } else {
-                    setTextViewText(R.id.latency_label, "ms 応答")
-                    setTextViewText(R.id.recoveries, "${snap.recoveriesToday}")
-                    setTextViewText(R.id.recoveries_label, "回 今日の復旧")
-                }
+                setTextViewText(R.id.value, t.value)
+                setTextColor(R.id.value, t.valueColor)
+                setTextViewText(R.id.status, t.status)
+                setTextColor(R.id.status, t.statusColor)
                 setOnClickPendingIntent(R.id.widget_root, MonitorService.openAppIntent(ctx))
+                if (layout == R.layout.widget_small) return@apply
+
+                setTextViewText(R.id.side, t.side)
+                setTextColor(R.id.side, t.valueColor)
+                setTextViewText(R.id.line1, t.line1)
+                val wide = layout == R.layout.widget_wide
+                setTextViewText(R.id.line2, if (wide) t.line2Wide else t.line2)
+                setTextViewText(R.id.line3, t.line3)
+                setViewVisibility(R.id.line3, if (wide && t.line3.isNotEmpty()) View.VISIBLE else View.GONE)
+                setTextViewText(R.id.latency, t.latency)
                 setOnClickPendingIntent(R.id.reconnect, MonitorService.reconnectPendingIntent(ctx))
+                setOnClickPendingIntent(R.id.settings, MonitorService.openAppIntent(ctx, MonitorService.TAB_SETTINGS))
+                // 再接続中は青く光らせる
                 if (snap.health == Health.RECOVERING) {
-                    setTextViewText(R.id.reconnect, "再接続中…")
-                } else {
-                    setTextViewText(R.id.reconnect, "今すぐ再接続")
+                    setInt(R.id.reconnect, "setColorFilter", ContextCompat.getColor(ctx, R.color.widget_edge_busy))
                 }
             }
 
         private fun describe(snap: Snapshot): String {
-            val q = snap.quality ?: return "電波メーター: 電波を取得できません"
+            val q = snap.quality ?: return "通信品質メーター: 電波を取得できません"
             val name = if (snap.route == Route.WIFI) "Wi-Fi" else "モバイル回線"
-            return "$name の通信品質 ${(q * 100).roundToInt()}パーセント" +
+            return "$name の通信品質 ${(q * 100).roundToInt()}" +
                 (snap.dbm?.let { "、${it}デシベルミリワット" } ?: "")
         }
 
@@ -194,9 +231,8 @@ class MeterWidget : AppWidgetProvider() {
             Health.OK -> GaugeBitmap.GOOD
             Health.BAD -> GaugeBitmap.BAD
             Health.UNSTABLE -> GaugeBitmap.WARN
-            Health.PAUSED -> ContextCompat.getColor(ctx, R.color.widget_sub)
             Health.RECOVERING -> 0xFF3B82F6.toInt()
-            Health.STOPPED -> ContextCompat.getColor(ctx, R.color.widget_sub)
+            Health.PAUSED, Health.STOPPED -> ContextCompat.getColor(ctx, R.color.widget_sub)
         }
     }
 }

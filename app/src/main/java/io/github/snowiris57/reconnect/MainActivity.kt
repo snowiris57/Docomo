@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
     private var setup by mutableStateOf(SetupState())
     private var monitoring by mutableStateOf(false)
     private var onboarded by mutableStateOf(true)
+    /** ウィジェットの歯車などから「このタブを開いて」と頼まれたとき */
+    private var tabRequest by mutableStateOf<Int?>(null)
 
     private val permLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -111,12 +113,24 @@ class MainActivity : ComponentActivity() {
             },
         )
 
+        if (savedInstanceState == null) tabRequest = intent.tabExtra()
         setContent {
             ReConnectTheme {
-                ReConnectApp(prefs = prefs, setup = setup, monitoring = monitoring, onboarded = onboarded, actions = actions)
+                ReConnectApp(
+                    prefs = prefs, setup = setup, monitoring = monitoring, onboarded = onboarded, actions = actions,
+                    tabRequest = tabRequest, onTabRequestHandled = { tabRequest = null },
+                )
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.tabExtra()?.let { tabRequest = it }
+    }
+
+    private fun Intent.tabExtra(): Int? =
+        if (hasExtra(MonitorService.EXTRA_TAB)) getIntExtra(MonitorService.EXTRA_TAB, 0) else null
 
     override fun onResume() {
         super.onResume()

@@ -1,22 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- ウィジェット選択画面の見本（針のメーター） -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="100dp"
-    android:height="100dp"
+    android:height="74dp"
     android:viewportWidth="100"
-    android:viewportHeight="100">
+    android:viewportHeight="74">
     <path
         android:fillColor="#00000000"
-        android:pathData="M21.72,78.28 A40,40 0 1,1 78.28,78.28"
-        android:strokeColor="@color/widget_track"
+        android:pathData="M15.36,65.2 A40,40 0 0,1 24.29,14.56"
+        android:strokeColor="#EF4444"
         android:strokeLineCap="round"
-        android:strokeWidth="8.5" />
+        android:strokeWidth="3.2" />
     <path
         android:fillColor="#00000000"
-        android:pathData="M21.72,78.28 A40,40 0 1,1 84.43,29.64"
+        android:pathData="M24.29,14.56 A40,40 0 0,1 75.71,14.56"
+        android:strokeColor="#F59E0B"
+        android:strokeWidth="3.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M75.71,14.56 A40,40 0 0,1 84.64,65.2"
         android:strokeColor="#22C55E"
         android:strokeLineCap="round"
-        android:strokeWidth="8.5" />
+        android:strokeWidth="3.2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M53.33,44.12 L82.33,34.69"
+        android:strokeColor="@color/widget_text"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.2" />
     <path
         android:fillColor="@color/widget_bg"
-        android:pathData="M84.43,29.64m-3.6,0a3.6,3.6 0,1 1,7.2 0a3.6,3.6 0,1 1,-7.2 0" />
+        android:pathData="M50,45.2m-3.5,0a3.5,3.5 0,1 1,7 0a3.5,3.5 0,1 1,-7 0"
+        android:strokeColor="@color/widget_text"
+        android:strokeWidth="1.6" />
 </vector>

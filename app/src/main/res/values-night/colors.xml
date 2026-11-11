@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="window_bg">#0E1513</color>
-    <color name="widget_bg">#151C1B</color>
-    <color name="widget_text">#EEF4F2</color>
-    <color name="widget_sub">#9AA8A5</color>
-    <color name="widget_track">#2A3432</color>
-    <color name="widget_btn_bg">#1F4A43</color>
-    <color name="widget_btn_text">#BFF3E8</color>
 </resources>

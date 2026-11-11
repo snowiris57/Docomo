@@ -212,9 +212,26 @@ object NetCheck {
             linkMbps = info.linkSpeed.takeIf { it > 0 },
             freqMhz = info.frequency,
             standard = standard,
-            ssid = ssid,
+            ssid = rememberSsid(ctx, net, ssid),
             tethering = metered,
         )
+    }
+
+    /**
+     * アプリを開いている間に分かった Wi-Fi 名を、同じ接続が続く間だけ覚えておく。
+     * 位置情報が「アプリの使用中のみ」だと、アプリを閉じている間（ウィジェット・通知）は
+     * Android が名前を隠すため。つなぎ直すと Network が変わるので、別の Wi-Fi の名前は出さない。
+     */
+    private fun rememberSsid(ctx: Context, net: Network, ssid: String?): String? {
+        val sp = ctx.getSharedPreferences("wifi_name", Context.MODE_PRIVATE)
+        val handle = net.networkHandle
+        if (ssid == null) {
+            return if (sp.getLong("handle", 0L) == handle) sp.getString("ssid", null) else null
+        }
+        if (sp.getLong("handle", 0L) != handle || sp.getString("ssid", null) != ssid) {
+            sp.edit().putLong("handle", handle).putString("ssid", ssid).apply()
+        }
+        return ssid
     }
 
     /** インターネット可能なモバイル回線の Network を探す */

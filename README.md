@@ -18,16 +18,18 @@
 <img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_home_tablet.png" width="560" alt="タブレット（2列＋ナビゲーションレール）">
 </p>
 
-### ホーム画面ウィジェット「電波メーター」
+### ホーム画面ウィジェット「通信品質メーター」
 
 <p>
-<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_small_light.png" width="240" alt="ウィジェット 2×2">
-<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_wide_dark.png" width="410" alt="ウィジェット 横長">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_meter_wifi.png" width="240" alt="ウィジェット 2×2（テザリング）">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_meter_mobile.png" width="240" alt="ウィジェット 2×2（モバイル）">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_wide_mobile.png" width="410" alt="ウィジェット 横長">
 </p>
 
-- **2×2**：電波品質メーター（0〜100）と状態
-- **横に広げる**：状態・通信会社・応答速度・今日の復旧回数・**「今すぐ再接続」ボタン**
-- Android 12 以降は壁紙の色（Material You）に、ダークモードにも自動で合わせます
+- TetherPulse のメーターと同じ並び：針のメーター（通信品質 0〜100）、品質の数字と dBm、Wi-Fi 名・帯域、速度・規格、状態と応答時間
+- 枠の色が状態で変わる（緑＝正常、黄＝不安定、赤＝異常、青＝再接続中、灰＝監視オフ）
+- 右上の ⟳ で今すぐ再接続、⚙ で設定を開く
+- **横に広げる**とメーターが左、文字が右に。チャンネルと Wi-Fi 区間の応答も出ます。小さくするとメーターと状態だけに
 - 監視をオフにしていても、メーターは電波を表示します
 
 ## できること
@@ -67,7 +69,7 @@ Android 10 以上。普通のアプリには機内モードやモバイルデー
    - または `v1.0.0` などのタグを push すると **Releases** に APK が添付されます
 3. 最初の案内のあと、ホームに出る「**はじめに**」の 3 ステップを済ませます（Shizuku・通知と電話の状態・電池の最適化）。
 4. Wi-Fi をオフにして「**今すぐ再接続**」を押し、モバイルデータが一瞬切れて戻ることを確かめます。
-5. 「**自動再接続**」をオンにすれば完了です。ホームの案内カード（または 設定 → 便利な機能）から「電波メーター」ウィジェットを置けます。
+5. 「**自動再接続**」をオンにすれば完了です。ホームの案内カード（または 設定 → 便利な機能）から「通信品質メーター」ウィジェットを置けます。
 
 ## 開発
 
@@ -77,7 +79,7 @@ Android 10 以上。普通のアプリには機内モードやモバイルデー
 ./gradlew recordPaparazziDebug   # 画面とウィジェットのスクリーンショットを撮り直す（端末不要）
 ```
 
-- UI は Jetpack Compose + Material 3。ウィジェットは RemoteViews で、メーターは Canvas でビットマップに描いています（アプリ内のメーターと同じデザイン）。
+- UI は Jetpack Compose + Material 3。ウィジェットは RemoteViews で、メーターは Canvas でビットマップに描いています（TetherPulse と同じ針のメーター）。
 - `app/debug.keystore` は、CI とローカルのどちらでビルドしても同じ署名にして上書きインストールできるようにするための鍵です（秘密の鍵ではありません）。
 
 ```
@@ -90,7 +92,7 @@ app/src/main/java/io/github/snowiris57/reconnect/
 ├── MonitorTileService.kt   クイック設定タイル
 ├── BootReceiver.kt         起動時の自動開始
 ├── Prefs.kt                設定
-├── widget/                 電波メーターのウィジェット（MeterWidget / GaugeBitmap）
+├── widget/                 通信品質メーターのウィジェット（MeterWidget / GaugeBitmap）
 └── ui/                     テーマ・メーター・グラフ・ホーム / 履歴 / 設定画面
 ```
 

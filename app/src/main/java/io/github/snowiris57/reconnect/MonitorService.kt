@@ -439,10 +439,17 @@ class MonitorService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-        fun openAppIntent(ctx: Context): PendingIntent = PendingIntent.getActivity(
-            ctx, 0,
-            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE,
+        /** アプリを開くときに表示するタブ（[MainActivity] が読む） */
+        const val EXTRA_TAB = "io.github.snowiris57.reconnect.TAB"
+        const val TAB_SETTINGS = 2
+
+        /** アプリを開く。[tab] を渡すとそのタブを表示する */
+        fun openAppIntent(ctx: Context, tab: Int? = null): PendingIntent = PendingIntent.getActivity(
+            ctx, if (tab == null) 0 else 100 + tab,
+            Intent(ctx, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .apply { if (tab != null) putExtra(EXTRA_TAB, tab) },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     }
 }

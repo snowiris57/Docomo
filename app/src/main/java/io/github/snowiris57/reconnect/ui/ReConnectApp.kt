@@ -26,6 +26,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -92,6 +93,8 @@ fun ReConnectApp(
     initialTab: Int = 0,
     preview: Boolean = false,
     previewTouch: Float? = null,
+    tabRequest: Int? = null,
+    onTabRequestHandled: () -> Unit = {},
 ) {
     AnimatedContent(
         targetState = onboarded,
@@ -101,7 +104,7 @@ fun ReConnectApp(
         if (!done) {
             WelcomeScreen(onStart = actions.finishOnboarding, animate = !preview)
         } else {
-            MainScaffold(prefs, setup, monitoring, actions, initialTab, preview, previewTouch)
+            MainScaffold(prefs, setup, monitoring, actions, initialTab, preview, previewTouch, tabRequest, onTabRequestHandled)
         }
     }
 }
@@ -115,8 +118,16 @@ private fun MainScaffold(
     initialTab: Int,
     preview: Boolean,
     previewTouch: Float?,
+    tabRequest: Int?,
+    onTabRequestHandled: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
+    LaunchedEffect(tabRequest) {
+        if (tabRequest != null) {
+            tab = tabRequest.coerceIn(0, Tab.entries.size - 1)
+            onTabRequestHandled()
+        }
+    }
     val status by MonitorState.status.collectAsStateWithLifecycle()
     val samples by MonitorState.samples.collectAsStateWithLifecycle()
     val events by MonitorState.events.collectAsStateWithLifecycle()
