@@ -47,9 +47,15 @@ class MeterWidget : AppWidgetProvider() {
         val signal: SignalInfo?,
         val health: Health,
         val recoveriesToday: Int,
+        /** 休止中の理由（「モバイルデータがオフ」など）。休止中でなければ null */
+        val pausedReason: String? = null,
     ) {
+        /** 休止中（機内モード・モバイルデータがオフなど）は通信を測っていないので、品質を出さない */
+        val paused: Boolean get() = pausedReason != null
+
         /** いま使っている回線の品質と dBm */
-        val quality: Float? get() = Quality.combined(if (route == Route.WIFI) wifi?.quality else signal?.quality, probe)
+        val quality: Float?
+            get() = if (paused) null else Quality.combined(if (route == Route.WIFI) wifi?.quality else signal?.quality, probe)
         val dbm: Int? get() = if (route == Route.WIFI) wifi?.rssi else signal?.rsrp
 
         companion object {
@@ -66,6 +72,7 @@ class MeterWidget : AppWidgetProvider() {
                     signal = sig,
                     health = if (st.running) st.health else Health.STOPPED,
                     recoveriesToday = DayStats.today(MonitorState.events.value).successes,
+                    pausedReason = st.headline.takeIf { st.running && st.health == Health.PAUSED && st.route == route },
                 )
             }
         }
@@ -76,6 +83,7 @@ class MeterWidget : AppWidgetProvider() {
         val value: String,
         val valueColor: Int,
         val side: String,
+        val sideColor: Int,
         val line1: String,
         val line2: String,
         /** 横長のとき: 2 行目に足すもの・3 行目 */
@@ -146,6 +154,7 @@ class MeterWidget : AppWidgetProvider() {
                 value = q?.let { "${(it * 100).roundToInt()}" } ?: "—",
                 valueColor = q?.let { GaugeBitmap.colorAt(it) } ?: sub,
                 side = snap.dbm?.let { "$it dBm" } ?: "電波なし",
+                sideColor = if (snap.paused) sub else q?.let { GaugeBitmap.colorAt(it) } ?: sub,
                 line1 = if (wifi != null) {
                     (wifi.ssid ?: if (wifi.tethering) "テザリング" else "Wi-Fi") + SEP + wifi.band
                 } else {
@@ -154,12 +163,16 @@ class MeterWidget : AppWidgetProvider() {
                         .joinToString(SEP)
                         .ifEmpty { "モバイル回線" }
                 },
-                line2 = if (wifi != null) {
+                line2 = if (snap.pausedReason != null) {
+                    snap.pausedReason
+                } else if (wifi != null) {
                     listOfNotNull(wifi.speedText, wifi.standard).joinToString(SEP)
                 } else {
                     "今日の復旧 ${snap.recoveriesToday} 回"
                 },
-                line2Wide = if (wifi != null) {
+                line2Wide = if (snap.pausedReason != null) {
+                    snap.pausedReason
+                } else if (wifi != null) {
                     listOfNotNull(wifi.speedText, wifi.standard, wifi.channel?.let { "ch $it" }).joinToString(SEP)
                 } else {
                     "今日の復旧 ${snap.recoveriesToday} 回"
@@ -196,7 +209,7 @@ class MeterWidget : AppWidgetProvider() {
                 if (layout == R.layout.widget_small) return@apply
 
                 setTextViewText(R.id.side, t.side)
-                setTextColor(R.id.side, t.valueColor)
+                setTextColor(R.id.side, t.sideColor)
                 setTextViewText(R.id.line1, t.line1)
                 val wide = layout == R.layout.widget_wide
                 setTextViewText(R.id.line2, if (wide) t.line2Wide else t.line2)

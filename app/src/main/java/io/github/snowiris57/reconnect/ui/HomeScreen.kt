@@ -268,7 +268,9 @@ private fun HeroCard(
     // いま表示している回線の、直近の疎通結果（監視中だけ）
     val probe = status.probe?.takeIf { status.running && status.route == shown && !peeking }
     val probeMs = probe?.takeIf { it.ok }?.ms?.toString() ?: "—"
-    val latencyText = probe?.let { if (it.ok) "応答 ${it.ms}ms" else "応答なし" }
+    // 休止中（機内モード・モバイルデータがオフなど）は通信を測っていないので、品質を出さない
+    val paused = status.running && status.health == Health.PAUSED && status.route == shown && !peeking
+    val latencyText = if (paused) "休止中" else probe?.let { if (it.ok) "応答 ${it.ms}ms" else "応答なし" }
 
     SectionCard {
         Column(
@@ -277,7 +279,7 @@ private fun HeroCard(
         ) {
             when (shown) {
                 Route.MOBILE -> SignalGauge(
-                    quality = Quality.combined(cell?.quality, probe),
+                    quality = if (paused) null else Quality.combined(cell?.quality, probe),
                     caption = cell?.type ?: "モバイル",
                     unit = cell?.rsrp?.let { "$it dBm ・ ${latencyText ?: SignalInfo.rsrpLabel(it)}" } ?: "電波を取得できません",
                     recovering = recovering,
@@ -285,7 +287,7 @@ private fun HeroCard(
                     modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp),
                 )
                 Route.WIFI -> SignalGauge(
-                    quality = Quality.combined(wifi?.quality, probe),
+                    quality = if (paused) null else Quality.combined(wifi?.quality, probe),
                     caption = wifi?.caption ?: "Wi-Fi",
                     unit = wifi?.let { "${it.rssi} dBm ・ ${latencyText ?: WifiReading.rssiLabel(it.rssi)}" } ?: "Wi-Fi に未接続",
                     extra = wifi?.speedText,

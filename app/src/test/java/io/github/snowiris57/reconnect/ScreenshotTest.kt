@@ -242,6 +242,11 @@ class ScreenshotTest {
     @Test fun widget_meter_off() = widget(
         R.layout.widget_meter, mobileSnap.copy(health = Health.STOPPED, probe = null), 150, 150, dark = false,
     )
+    /** 実機で報告された状況: モバイルデータがオフで休止中（電波は -97 dBm） */
+    @Test fun widget_meter_paused() = widget(
+        R.layout.widget_meter,
+        mobileSnap.copy(health = Health.PAUSED, probe = null, pausedReason = "モバイルデータがオフ"), 150, 150,
+    )
     @Test fun widget_small() = widget(R.layout.widget_small, wifiSnap, 110, 110)
     @Test fun widget_wide_wifi() = widget(R.layout.widget_wide, wifiSnap, 320, 150)
     @Test fun widget_wide_mobile() = widget(R.layout.widget_wide, mobileSnap.copy(health = Health.BAD, probe = ProbeResult(false, 0)), 320, 150)

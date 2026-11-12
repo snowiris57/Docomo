@@ -58,6 +58,8 @@ object GaugeBitmap {
             strokeWidth = stroke
             strokeCap = Paint.Cap.ROUND
             this.shader = shader
+            // 値が無い（休止中・電波なし）ときは弧を薄くする
+            if (quality == null) alpha = 70
         }
         c.drawArc(rect, START, SWEEP, false, arc)
 
