@@ -5,10 +5,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- 任意: Wi-Fi の名前（SSID）を表示するときだけ使う -->
+    <!-- 任意: Wi-Fi の名前（SSID）の表示と、「通信が悪かった場所」の記録（設定でオンにしたとき）に使う -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- 任意: ウィジェットや通知（アプリを閉じている間）でも Wi-Fi 名を表示するとき -->
+    <!-- 任意: アプリを閉じている間も Wi-Fi 名の表示・場所の記録をするとき -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />

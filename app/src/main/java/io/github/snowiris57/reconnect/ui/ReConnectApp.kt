@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.snowiris57.reconnect.MonitorState
+import io.github.snowiris57.reconnect.Place
+import io.github.snowiris57.reconnect.PlaceLog
 import io.github.snowiris57.reconnect.Prefs
 
 enum class ShizukuStatus { NOT_RUNNING, NOT_GRANTED, GRANTED }
@@ -75,6 +77,8 @@ class AppActions(
     val requestLocation: () -> Unit = {},
     val requestBackgroundLocation: () -> Unit = {},
     val openLocationSettings: () -> Unit = {},
+    val openPlace: (Place) -> Unit = {},
+    val clearPlaces: () -> Unit = {},
 )
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -95,6 +99,8 @@ fun ReConnectApp(
     previewTouch: Float? = null,
     tabRequest: Int? = null,
     onTabRequestHandled: () -> Unit = {},
+    /** スクリーンショット用: 履歴タブで最初に開くページ（0=できごと、1=場所） */
+    initialHistoryPage: Int = 0,
 ) {
     AnimatedContent(
         targetState = onboarded,
@@ -104,7 +110,7 @@ fun ReConnectApp(
         if (!done) {
             WelcomeScreen(onStart = actions.finishOnboarding, animate = !preview)
         } else {
-            MainScaffold(prefs, setup, monitoring, actions, initialTab, preview, previewTouch, tabRequest, onTabRequestHandled)
+            MainScaffold(prefs, setup, monitoring, actions, initialTab, preview, previewTouch, tabRequest, onTabRequestHandled, initialHistoryPage)
         }
     }
 }
@@ -120,6 +126,7 @@ private fun MainScaffold(
     previewTouch: Float?,
     tabRequest: Int?,
     onTabRequestHandled: () -> Unit,
+    initialHistoryPage: Int,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     LaunchedEffect(tabRequest) {
@@ -131,6 +138,7 @@ private fun MainScaffold(
     val status by MonitorState.status.collectAsStateWithLifecycle()
     val samples by MonitorState.samples.collectAsStateWithLifecycle()
     val events by MonitorState.events.collectAsStateWithLifecycle()
+    val places by PlaceLog.places.collectAsStateWithLifecycle()
 
     BoxWithConstraints {
         // タブレット・横向きは左のナビゲーションレール、スマホは下のナビゲーションバー
@@ -175,7 +183,12 @@ private fun MainScaffold(
                                 previewTouch = previewTouch,
                                 slowMs = prefs.slowMs,
                             )
-                            Tab.HISTORY -> HistoryScreen(events, samples, onClear = actions.clearHistory)
+                            Tab.HISTORY -> HistoryScreen(
+                                events, samples, onClear = actions.clearHistory,
+                                places = places, placeMode = prefs.placeMode,
+                                onOpenPlace = actions.openPlace, onClearPlaces = actions.clearPlaces,
+                                initialPage = initialHistoryPage,
+                            )
                             Tab.SETTINGS -> SettingsScreen(prefs, setup, actions)
                         }
                     }

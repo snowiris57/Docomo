@@ -92,7 +92,9 @@ class MainActivity : ComponentActivity() {
                 MonitorState.clearEvents()
                 MeterWidget.updateAll(this)
             },
-            openUrl = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
+            openUrl = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
+            openPlace = ::openPlace,
+            clearPlaces = { PlaceLog.clear() },
             pinWidget = ::pinWidget,
             dismissWidgetHint = {
                 prefs.widgetHintDismissed = true
@@ -127,6 +129,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.tabExtra()?.let { tabRequest = it }
+    }
+
+    /** 記録した場所を地図アプリで開く。地図アプリが無ければブラウザの Google マップで */
+    private fun openPlace(place: Place) {
+        val at = String.format(java.util.Locale.US, "%.6f,%.6f", place.lat, place.lon)
+        val label = Uri.encode("${place.kind.label}（ReConnect）")
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$at($label)"))) }
+            .onFailure {
+                runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$at")))
+                }
+            }
     }
 
     private fun Intent.tabExtra(): Int? =

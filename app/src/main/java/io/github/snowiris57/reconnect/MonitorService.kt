@@ -99,6 +99,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        PlaceLog.save()
         scope.cancel()
         if (loopJob != null) MonitorState.event(EventType.STOP, "監視を停止しました")
         MonitorState.status.update {
@@ -146,6 +147,9 @@ class MonitorService : Service() {
                         hopMs = c.probe?.hopMs,
                     )
                 )
+
+                // 通信が悪かった場所の記録（モバイル回線のときだけ。設定でオンにしたとき）
+                if (c.route == Route.MOBILE) PlaceLog.onCheck(this, scope, p, c.health, c.signal, c.probe)
 
                 var detail = c.detail
                 var shouldRecover = false

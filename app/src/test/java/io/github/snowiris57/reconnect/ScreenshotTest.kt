@@ -84,6 +84,7 @@ class ScreenshotTest {
         touch: Float? = null,
         base: DeviceConfig = DeviceConfig.PIXEL_6,
         fontScale: Float = 1f,
+        historyPage: Int = 0,
     ) {
         paparazzi.unsafeUpdateConfig(
             deviceConfig = base.copy(
@@ -103,6 +104,7 @@ class ScreenshotTest {
                     initialTab = tab,
                     preview = true,
                     previewTouch = touch,
+                    initialHistoryPage = historyPage,
                 )
             }
         }
@@ -185,6 +187,31 @@ class ScreenshotTest {
             }
         }
     }
+
+    /** 履歴の「場所」ページ。同じ場所で 2 日続けて悪くなった例を含む */
+    @Test fun history_places() {
+        val now = System.currentTimeMillis()
+        val min = 60_000L
+        val day = 24 * 60 * min
+        fun place(ago: Long, lat: Double, lon: Double, kind: PlaceKind, rsrp: Int, fails: Int = 0, ms: Long? = null, len: Long = 2 * min) =
+            Place(now - ago - len, now - ago, lat, lon, 35f, kind, rsrp, "5G NSA", (len / 15_000).toInt(), fails, ms)
+        PlaceLog.places.value = listOf(
+            place(day + 40 * min, 36.5613, 136.6562, PlaceKind.BAD, -118, fails = 6),
+            place(day + 20 * min, 36.5780, 136.6480, PlaceKind.WEAK, -114, ms = 180),
+            place(95 * min, 36.5947, 136.6256, PlaceKind.GOOD, -92, ms = 60, len = 6 * min),
+            place(70 * min, 36.5612, 136.6563, PlaceKind.BAD, -121, fails = 4, ms = 900, len = 3 * min),
+            place(30 * min, 36.5702, 136.6410, PlaceKind.UNSTABLE, -104, ms = 620),
+            place(8 * min, 36.5850, 136.6300, PlaceKind.WEAK, -116, ms = 140, len = 0),
+        )
+        try {
+            app(true, ready, tab = 1, historyPage = 1)
+        } finally {
+            PlaceLog.places.value = emptyList()
+        }
+    }
+
+    /** 設定の「場所の記録」（テスト環境では設定が保存されないので、初期の「記録しない」で写る） */
+    @Test fun settings_places() = app(true, ready.copy(locationGranted = true), tab = 2, base = DeviceConfig.PIXEL_6.copy(screenHeight = 6200))
 
     @Test fun traffic_light() = trafficCard(false)
     @Test fun traffic_dark_touch() = trafficCard(true, touch = 0.88f)

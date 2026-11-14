@@ -78,4 +78,14 @@ class Prefs(ctx: Context) {
     var slowMs: Int
         get() = int("slow_ms", 300)
         set(v) = sp.edit { putInt("slow_ms", v.coerceIn(100, 1500)) }
+
+    /** 場所の記録（[PlaceMode]）。0=オフ、1=悪いところだけ、2=通った道すじも */
+    var placeMode: Int
+        get() = int("place_mode", PlaceMode.OFF)
+        set(v) = sp.edit { putInt("place_mode", v.coerceIn(PlaceMode.OFF, PlaceMode.ALL)) }
+
+    /** これより電波（RSRP, dBm）が弱いと「電波が弱い場所」として記録する */
+    var placeWeakRsrp: Int
+        get() = int("place_weak_rsrp", -110)
+        set(v) = sp.edit { putInt("place_weak_rsrp", v.coerceIn(-130, -90)) }
 }

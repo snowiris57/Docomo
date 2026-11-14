@@ -1,5 +1,10 @@
 package io.github.snowiris57.reconnect.ui
 
+import io.github.snowiris57.reconnect.PlaceMode
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,6 +50,8 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
     var wifiMonitor by remember { mutableStateOf(prefs.wifiMonitor) }
     var slow by remember { mutableFloatStateOf(prefs.slowMs.toFloat()) }
     var wifiRecover by remember { mutableStateOf(prefs.wifiRecover) }
+    var placeMode by remember { mutableIntStateOf(prefs.placeMode) }
+    var placeWeak by remember { mutableFloatStateOf(prefs.placeWeakRsrp.toFloat()) }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
@@ -173,6 +180,58 @@ fun SettingsScreen(prefs: Prefs, setup: SetupState, actions: AppActions) {
             }
         }
         item {
+            Group("場所の記録") {
+                val choose = { mode: Int ->
+                    placeMode = mode
+                    prefs.placeMode = mode
+                    if (mode != PlaceMode.OFF && !setup.locationGranted) actions.requestLocation()
+                }
+                ChoiceSetting("記録しない", "場所は調べません", placeMode == PlaceMode.OFF) { choose(PlaceMode.OFF) }
+                ChoiceSetting(
+                    "悪いところだけ記録",
+                    "モバイル回線で、電波が弱い・不安定・応答なしのときだけ場所を調べて残します。電池への負担は小さめです",
+                    placeMode == PlaceMode.BAD_ONLY,
+                ) { choose(PlaceMode.BAD_ONLY) }
+                ChoiceSetting(
+                    "通った道すじも記録",
+                    "良好なときも残します。チェックのたびに場所を調べるので、電池を少し多く使います",
+                    placeMode == PlaceMode.ALL,
+                ) { choose(PlaceMode.ALL) }
+                if (placeMode != PlaceMode.OFF) {
+                    Divider()
+                    SliderSetting(
+                        title = "「電波が弱い」とみなす強さ",
+                        value = placeWeak,
+                        valueText = "${placeWeak.roundToInt()} dBm 未満",
+                        help = "通信はできていても、これより弱いときは「電波が弱い場所」として残します",
+                        range = -130f..-90f, step = 5f,
+                        onChange = { placeWeak = it },
+                        onDone = { prefs.placeWeakRsrp = placeWeak.roundToInt() },
+                    )
+                    Divider()
+                    when {
+                        !setup.locationGranted -> LinkItem("位置情報の許可が必要です", "タップして許可してください") { actions.requestLocation() }
+                        !setup.locationOn -> LinkItem("位置情報がオフです", "オンにしないと場所を記録できません") { actions.openLocationSettings() }
+                        !setup.backgroundLocationGranted -> LinkItem(
+                            "アプリを閉じている間も記録する",
+                            "位置情報を「常に許可」にしてください。今のままだと、アプリを開いている間しか記録できません",
+                        ) { actions.requestBackgroundLocation() }
+                        else -> ListItem(
+                            headlineContent = { Text("位置情報") },
+                            supportingContent = { Text("常に許可されています。記録は「履歴」→「場所」で見られます") },
+                            colors = itemColors(),
+                        )
+                    }
+                }
+                Divider()
+                ListItem(
+                    headlineContent = { Text("記録の扱い") },
+                    supportingContent = { Text("このスマホの中だけに保存し、外には送りません。30日たつと自動で消えます") },
+                    colors = itemColors(),
+                )
+            }
+        }
+        item {
             Group("便利な機能") {
                 if (setup.canPinWidget) {
                     LinkItem(
@@ -269,6 +328,18 @@ private fun SwitchSetting(title: String, help: String, checked: Boolean, onChang
         trailingContent = { Switch(checked = checked, onCheckedChange = onChange) },
         colors = itemColors(),
         modifier = Modifier.clickable { onChange(!checked) },
+    )
+}
+
+/** いくつかの中から 1 つを選ぶ行 */
+@Composable
+private fun ChoiceSetting(title: String, help: String, selected: Boolean, onSelect: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(help) },
+        leadingContent = { RadioButton(selected = selected, onClick = null) },
+        colors = itemColors(),
+        modifier = Modifier.selectable(selected = selected, role = Role.RadioButton, onClick = onSelect),
     )
 }
 

@@ -7,6 +7,7 @@ class App : Application() {
         super.onCreate()
         MonitorState.init(this)
         Traffic.init(this)
+        PlaceLog.init(this)
         NetCheck.init(this)
     }
 }
