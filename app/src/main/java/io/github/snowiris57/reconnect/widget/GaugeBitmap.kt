@@ -81,19 +81,6 @@ object GaugeBitmap {
             )
         }
 
-        // 目盛りの数字（0・25・50・75・100）を内側に
-        val scale = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textAlign = Paint.Align.CENTER
-            textSize = w * 0.085f
-            color = palette.sub
-            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        }
-        for (k in 0..4) {
-            val a = Math.toRadians((START + SWEEP * k / 4).toDouble())
-            val rr = r - stroke * 1.1f - w * 0.16f
-            c.drawText("${k * 25}", cx + rr * cos(a).toFloat(), cy + rr * sin(a).toFloat() + scale.textSize * 0.36f, scale)
-        }
-
         // 針と軸
         val hubR = w * 0.035f
         if (quality != null) {
@@ -116,6 +103,29 @@ object GaugeBitmap {
             strokeWidth = w * 0.016f
             color = if (quality != null) palette.text else palette.sub
         })
+
+        // 目盛りの数字（0・25・50・75・100）を内側に
+        val scale = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = w * 0.085f
+            color = palette.sub
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        }
+        // 針が数字の上を通っても読めるよう、背景色でふちどる
+        val halo = Paint(scale).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = w * 0.035f
+            strokeJoin = Paint.Join.ROUND
+            color = palette.knob
+        }
+        for (k in 0..4) {
+            val a = Math.toRadians((START + SWEEP * k / 4).toDouble())
+            val rr = r - stroke * 1.1f - w * 0.16f
+            val tx = cx + rr * cos(a).toFloat()
+            val ty = cy + rr * sin(a).toFloat() + scale.textSize * 0.36f
+            c.drawText("${k * 25}", tx, ty, halo)
+            c.drawText("${k * 25}", tx, ty, scale)
+        }
 
         // 軸の下の小さな文字
         val lbl = Paint(Paint.ANTI_ALIAS_FLAG).apply {

@@ -404,6 +404,10 @@ object NetCheck {
         appCtx = ctx.applicationContext
     }
 
+    /** Wi-Fi のゲートウェイ（ルーターや iPhone）の IP アドレス。例: "192.168.11.1" */
+    fun wifiGateway(ctx: Context): String? =
+        runCatching { wifiNetwork(ctx)?.let { gateway(it) }?.hostAddress }.getOrNull()
+
     private fun gateway(network: Network): InetAddress? {
         val cm = appCtx?.getSystemService(ConnectivityManager::class.java) ?: return null
         return cm.getLinkProperties(network)?.routes

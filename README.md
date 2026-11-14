@@ -29,12 +29,13 @@
 <p>
 <img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_meter_wifi.png" width="240" alt="ウィジェット 2×2（テザリング）">
 <img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_meter_mobile.png" width="240" alt="ウィジェット 2×2（モバイル）">
-<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_wide_mobile.png" width="410" alt="ウィジェット 横長">
+<img src="app/src/test/snapshots/images/io.github.snowiris57.reconnect_ScreenshotTest_widget_graph_wifi.png" width="410" alt="ウィジェット 横長（応答時間の棒グラフつき）">
 </p>
 
 - TetherPulse のメーターと同じ並び：針のメーター（通信品質 0〜100）、品質の数字と dBm、Wi-Fi 名・帯域、速度・規格、状態と応答時間
 - 枠の色が状態で変わる（緑＝正常、黄＝不安定、赤＝異常、青＝再接続中、灰＝監視オフ）
 - 右上の ⟳ で今すぐ再接続、⚙ で設定を開く
+- 横に広げて高さもあると、下に**応答時間の棒グラフ**（直近 40 回のチェック）と「最後の成功」も出ます
 - **横に広げる**とメーターが左、文字が右に。チャンネルと Wi-Fi 区間の応答も出ます。小さくするとメーターと状態だけに
 - 監視をオフにしていても、メーターは電波を表示します
 
@@ -49,6 +50,7 @@
 | 🔁 **自動で再接続** | モバイル: ① データ OFF→ON → ② だめなら機内モード ON→OFF。Wi-Fi: つながっているのに通信できなければ Wi-Fi OFF→ON（設定でオフにできます） |
 | 🧯 **やりすぎ防止** | 再接続後は待ち時間を入れ、失敗するたびに倍々に延長（最大30分）。1時間あたりの回数にも上限。途中で止めても無線を切ったままにしない |
 | 📈 **電波品質の推移** | 直近1時間の推移グラフに、疎通NG（赤い点）と再接続（青い破線）を表示。アプリを閉じても残ります |
+| ⏱ **応答時間とチェックの記録** | 応答時間の棒グラフ（緑＝目安以内、黄＝遅い、赤＝応答なし）、成功・失敗の回数、接続先と宛先、直近のチェックのログ、最後の成功・連続失敗 |
 | 📶 **通信量** | いまの受信・送信の速さ、1時間の合計、直近1時間（10秒ごと）の受信（青）・送信（オレンジ）のグラフ。なぞると各時点の値 |
 | 🗂 **履歴と統計** | 今日の再接続回数・成功率・異常検知・正常率、日ごとのタイムライン |
 | ⚙️ **細かな設定** | チェック間隔、判定回数、電波が弱いときも再接続（RSRP 閾値）、待ち時間、上限 |

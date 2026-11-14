@@ -23,6 +23,8 @@ data class LiveReadings(
     /** いまの受信・送信（バイト/秒）。2 秒ごとの差から出す */
     val rx: Long? = null,
     val tx: Long? = null,
+    /** Wi-Fi の宛先（ゲートウェイ）の IP アドレス */
+    val gateway: String? = null,
 )
 
 /** 画面表示中は 2 秒ごとに読み直して、メーターを生き生きと動かす */
@@ -52,6 +54,7 @@ fun rememberLive(): LiveReadings {
                     wifi = runCatching { NetCheck.wifi(ctx) }.getOrNull(),
                     rx = rate?.first ?: value.rx,
                     tx = rate?.second ?: value.tx,
+                    gateway = NetCheck.wifiGateway(ctx),
                 )
                 delay(2_000)
             }

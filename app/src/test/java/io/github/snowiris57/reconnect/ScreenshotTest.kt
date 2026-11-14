@@ -173,6 +173,19 @@ class ScreenshotTest {
         }
     }
 
+    @Test fun checks_card() {
+        wifiMode()
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_6.copy(nightMode = NightMode.NIGHT, screenHeight = 1500))
+        val samples = MonitorState.samples.value.mapIndexed { i, x -> if (x.route == Route.WIFI) x.copy(hopMs = 20L + i % 9) else x }
+        paparazzi.snapshot {
+            ReConnectTheme(dark = true, dynamic = false) {
+                Box(Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+                    io.github.snowiris57.reconnect.ui.ChecksCard(samples, 300, tether, "172.20.10.1")
+                }
+            }
+        }
+    }
+
     @Test fun traffic_light() = trafficCard(false)
     @Test fun traffic_dark_touch() = trafficCard(true, touch = 0.88f)
     @Test fun home_widget_hint() = app(false, ready.copy(canPinWidget = true), tall = true)
@@ -209,13 +222,18 @@ class ScreenshotTest {
         if (layout != R.layout.widget_small) {
             v.findViewById<TextView>(R.id.side).apply { text = t.side; setTextColor(t.valueColor) }
             v.findViewById<TextView>(R.id.line1).text = t.line1
-            val wide = layout == R.layout.widget_wide
+            val graph = layout == R.layout.widget_wide_graph
+            val wide = graph || layout == R.layout.widget_wide
             v.findViewById<TextView>(R.id.line2).text = if (wide) t.line2Wide else t.line2
             v.findViewById<TextView>(R.id.line3).apply {
                 text = t.line3
-                visibility = if (wide && t.line3.isNotEmpty()) android.view.View.VISIBLE else android.view.View.GONE
+                visibility = if (wide && !graph && t.line3.isNotEmpty()) android.view.View.VISIBLE else android.view.View.GONE
             }
-            v.findViewById<TextView>(R.id.latency).text = t.latency
+            v.findViewById<TextView>(R.id.latency).text = if (graph) t.lastOk else t.latency
+            if (graph) {
+                v.findViewById<TextView>(R.id.graph_label).text = t.graphLabel
+                v.findViewById<ImageView>(R.id.graph).setImageBitmap(MeterWidget.latencyBitmap(ctx, snap))
+            }
         }
         paparazzi.snapshot(stage)
     }
@@ -258,6 +276,22 @@ class ScreenshotTest {
             probe = ProbeResult(true, 19, hopMs = 16),
         ),
         320, 150,
+    )
+    /** 実機と同じ大きさ（約 343×159dp）の、応答時間の棒グラフつき */
+    private val recentChecks = (0 until 40).map { i ->
+        val ms = 20L + (i * 37 % 60) + (if (i % 9 == 4) 260 else 0) + (if (i == 30) 420 else 0)
+        Sample(1_000L * i, -38, 1f, if (i == 22) null else ms, i != 22, Health.OK, Route.WIFI, hopMs = 30)
+    }
+    private val buffalo = WifiReading(
+        rssi = -38, linkMbps = 1441, freqMhz = 5975, standard = "Wi-Fi 6E", ssid = "Buffalo-DA60-WPA3", tethering = false,
+    )
+    @Test fun widget_graph_wifi() = widget(
+        R.layout.widget_wide_graph,
+        wifiSnap.copy(wifi = buffalo, probe = ProbeResult(true, 23, hopMs = 41), recent = recentChecks), 343, 159,
+    )
+    @Test fun widget_graph_min() = widget(
+        R.layout.widget_wide_graph,
+        mobileSnap.copy(recent = recentChecks.map { it.copy(route = Route.MOBILE, hopMs = null) }), 300, 145,
     )
     @Test fun widget_small() = widget(R.layout.widget_small, wifiSnap, 110, 110)
     @Test fun widget_wide_wifi() = widget(R.layout.widget_wide, wifiSnap, 320, 150)

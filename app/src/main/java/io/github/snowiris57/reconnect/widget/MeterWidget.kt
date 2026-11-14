@@ -15,12 +15,17 @@ import io.github.snowiris57.reconnect.Health
 import io.github.snowiris57.reconnect.MonitorService
 import io.github.snowiris57.reconnect.MonitorState
 import io.github.snowiris57.reconnect.NetCheck
+import io.github.snowiris57.reconnect.Prefs
 import io.github.snowiris57.reconnect.ProbeResult
 import io.github.snowiris57.reconnect.Quality
 import io.github.snowiris57.reconnect.R
 import io.github.snowiris57.reconnect.Route
+import io.github.snowiris57.reconnect.Sample
 import io.github.snowiris57.reconnect.SignalInfo
 import io.github.snowiris57.reconnect.WifiReading
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -49,7 +54,13 @@ class MeterWidget : AppWidgetProvider() {
         val recoveriesToday: Int,
         /** 休止中の理由（「モバイルデータがオフ」など）。休止中でなければ null */
         val pausedReason: String? = null,
+        /** 直近のチェック（応答時間の棒グラフ用）と、「不安定」の目安 */
+        val recent: List<Sample> = emptyList(),
+        val slowMs: Int = 300,
     ) {
+        /** 最後に通信できた時刻 */
+        val lastOkAt: Long? get() = recent.lastOrNull { it.ok == true }?.time
+
         /** 休止中（機内モード・モバイルデータがオフなど）は通信を測っていないので、品質を出さない */
         val paused: Boolean get() = pausedReason != null
 
@@ -73,6 +84,8 @@ class MeterWidget : AppWidgetProvider() {
                     health = if (st.running) st.health else Health.STOPPED,
                     recoveriesToday = DayStats.today(MonitorState.events.value).successes,
                     pausedReason = st.headline.takeIf { st.running && st.health == Health.PAUSED && st.route == route },
+                    recent = MonitorState.samples.value.takeLast(LatencyBitmap.SLOTS),
+                    slowMs = Prefs(ctx).slowMs,
                 )
             }
         }
@@ -92,10 +105,16 @@ class MeterWidget : AppWidgetProvider() {
         val status: String,
         val statusColor: Int,
         val latency: String,
+        /** グラフつきのとき: 状態の右（最後の成功）と、グラフの左（応答時間） */
+        val lastOk: String,
+        val graphLabel: String,
     )
 
     companion object {
         private const val SEP = " · "
+
+        /** これ以上の高さ（dp）があれば、横長のウィジェットに応答時間の棒グラフも出す */
+        private const val GRAPH_MIN_HEIGHT = 145f
 
         fun updateAll(ctx: Context) {
             val manager = AppWidgetManager.getInstance(ctx) ?: return
@@ -115,6 +134,7 @@ class MeterWidget : AppWidgetProvider() {
                         SizeF(100f, 100f) to build(ctx, R.layout.widget_small, snap, t, gauge),
                         SizeF(120f, 135f) to build(ctx, R.layout.widget_meter, snap, t, gauge),
                         SizeF(250f, 110f) to build(ctx, R.layout.widget_wide, snap, t, gauge),
+                        SizeF(250f, GRAPH_MIN_HEIGHT) to build(ctx, R.layout.widget_wide_graph, snap, t, gauge),
                     )
                 )
             } else {
@@ -122,6 +142,7 @@ class MeterWidget : AppWidgetProvider() {
                 val w = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
                 val h = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)
                 val layout = when {
+                    w >= 250 && h >= GRAPH_MIN_HEIGHT -> R.layout.widget_wide_graph
                     w >= 250 -> R.layout.widget_wide
                     h in 1 until 135 -> R.layout.widget_small
                     else -> R.layout.widget_meter
@@ -137,6 +158,17 @@ class MeterWidget : AppWidgetProvider() {
             label = "品質",
             palette = palette(ctx),
         )
+
+        fun latencyBitmap(ctx: Context, snap: Snapshot): android.graphics.Bitmap {
+            val d = ctx.resources.displayMetrics.density
+            return LatencyBitmap.render(
+                widthPx = (240 * d).roundToInt().coerceIn(300, 900),
+                heightPx = (30 * d).roundToInt().coerceIn(40, 120),
+                samples = snap.recent,
+                slowMs = snap.slowMs,
+                baseline = ContextCompat.getColor(ctx, R.color.widget_track),
+            )
+        }
 
         fun palette(ctx: Context) = GaugeBitmap.Palette(
             track = ContextCompat.getColor(ctx, R.color.widget_track),
@@ -185,6 +217,12 @@ class MeterWidget : AppWidgetProvider() {
                     wifi != null -> "ネット $net"
                     else -> "応答 $net"
                 },
+                lastOk = snap.lastOkAt?.let { "最後の成功 " + SimpleDateFormat("HH:mm", Locale.JAPAN).format(Date(it)) }.orEmpty(),
+                graphLabel = when {
+                    net == null -> "応答時間"
+                    wifi != null -> listOfNotNull(snap.probe?.hopMs?.let { "Wi-Fi ${it}ms" }, "ネット $net").joinToString("\n")
+                    else -> "応答\n$net"
+                },
             )
         }
 
@@ -211,11 +249,17 @@ class MeterWidget : AppWidgetProvider() {
                 setTextViewText(R.id.side, t.side)
                 setTextColor(R.id.side, t.sideColor)
                 setTextViewText(R.id.line1, t.line1)
-                val wide = layout == R.layout.widget_wide
+                val graph = layout == R.layout.widget_wide_graph
+                val wide = graph || layout == R.layout.widget_wide
                 setTextViewText(R.id.line2, if (wide) t.line2Wide else t.line2)
+                // グラフつきでは、応答時間はグラフの左に出す。状態の右は「最後の成功」
                 setTextViewText(R.id.line3, t.line3)
-                setViewVisibility(R.id.line3, if (wide && t.line3.isNotEmpty()) View.VISIBLE else View.GONE)
-                setTextViewText(R.id.latency, t.latency)
+                setViewVisibility(R.id.line3, if (wide && !graph && t.line3.isNotEmpty()) View.VISIBLE else View.GONE)
+                setTextViewText(R.id.latency, if (graph) t.lastOk else t.latency)
+                if (graph) {
+                    setTextViewText(R.id.graph_label, t.graphLabel)
+                    setImageViewBitmap(R.id.graph, latencyBitmap(ctx, snap))
+                }
                 setOnClickPendingIntent(R.id.reconnect, MonitorService.reconnectPendingIntent(ctx))
                 setOnClickPendingIntent(R.id.settings, MonitorService.openAppIntent(ctx, MonitorService.TAB_SETTINGS))
                 // 再接続中は青く光らせる

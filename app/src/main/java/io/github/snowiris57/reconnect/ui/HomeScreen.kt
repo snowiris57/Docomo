@@ -1,5 +1,8 @@
 package io.github.snowiris57.reconnect.ui
 
+import java.util.Locale
+import java.util.Date
+import java.text.SimpleDateFormat
 import io.github.snowiris57.reconnect.TrafficSample
 import io.github.snowiris57.reconnect.Traffic
 import androidx.compose.ui.graphics.Color
@@ -93,6 +96,8 @@ fun HomeScreen(
     live: LiveReadings = rememberLive(),
     previewTouch: Float? = null,
     traffic: List<TrafficSample> = Traffic.samples.collectAsStateWithLifecycle().value,
+    /** 「不安定」の目安（ms）。応答時間のグラフの色分けに使う */
+    slowMs: Int = 300,
 ) {
     val stats = remember(events) { DayStats.today(events) }
     val ratio = remember(samples) { okRatio(samples) }
@@ -106,6 +111,14 @@ fun HomeScreen(
     val lastRecovery = remember(events) {
         events.firstOrNull { it.type == EventType.RECOVER_OK }?.time
             ?.takeIf { System.currentTimeMillis() - it < 30_000 } ?: 0L
+    }
+    // TetherPulse と同じ「最後の成功・連続失敗」
+    val checkLine = remember(samples, status.badCount, status.running) {
+        if (!status.running) null
+        else {
+            val last = samples.lastOrNull { it.ok == true }?.time
+            "最後の成功 " + (last?.let { clock.format(Date(it)) } ?: "—") + " ・ 連続失敗 ${status.badCount}回"
+        }
     }
     val recoveryTimes = remember(events) { events.filter { it.type == EventType.RECOVER_START }.map { it.time } }
     var askShizuku by rememberSaveable { mutableStateOf(false) }
@@ -123,7 +136,7 @@ fun HomeScreen(
             }
         }
         if (!setup.complete) item { SetupCard(setup, actions) }
-        item { HeroCard(status, shown, live.route, cellNow, wifiNow, stats, ratio, lastRecovery) }
+        item { HeroCard(status, shown, live.route, cellNow, wifiNow, stats, ratio, lastRecovery, checkLine) }
     }
     val secondary: LazyListScope.() -> Unit = {
         item { ControlCard(status, monitoring, actions, reconnect) }
@@ -147,6 +160,7 @@ fun HomeScreen(
                 }
             }
         }
+        item { ChecksCard(samples, slowMs, wifiNow.takeIf { live.route == Route.WIFI }, live.gateway) }
         item { TrafficCard(traffic, live) }
         item { RecentEvents(events.take(4), onOpenHistory) }
     }
@@ -262,6 +276,7 @@ private fun HeroCard(
     stats: DayStats,
     okRatio: Int?,
     lastRecovery: Long,
+    checkLine: String? = null,
 ) {
     val recovering = status.health == Health.RECOVERING && shown == active
     val peeking = shown != active
@@ -321,6 +336,15 @@ private fun HeroCard(
                         )
                     }
                 }
+            }
+            if (checkLine != null && !peeking) {
+                Text(
+                    checkLine,
+                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
             AnimatedVisibility(recovering) {
                 LinearProgressIndicator(
@@ -496,6 +520,68 @@ private fun SetupRow(done: Boolean, title: String, body: String, action: String,
         trailingContent = { if (!done) TextButton(onClick = onClick) { Text(action) } },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     )
+}
+
+private val clock = SimpleDateFormat("HH:mm:ss", Locale.JAPAN)
+
+/** 応答時間の棒グラフ、接続先と宛先、直近のチェックのログ（TetherPulse のアプリ画面にあるもの） */
+@Composable
+internal fun ChecksCard(samples: List<Sample>, slowMs: Int, wifi: WifiReading?, gateway: String?) {
+    val since = (samples.lastOrNull()?.time ?: 0L) - 60 * 60 * 1000L
+    val hour = samples.filter { it.time >= since }
+    val ok = hour.count { it.ok == true }
+    val ng = hour.count { it.ok == false }
+    val sub = MaterialTheme.colorScheme.onSurfaceVariant
+    SectionCard {
+        Column(Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "応答時間とチェックの記録",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Spacer(Modifier.weight(1f))
+                Text("最大1時間", style = MaterialTheme.typography.labelMedium, color = sub)
+            }
+            Text(
+                "成功 ${ok}回 ・ 失敗 ${ng}回",
+                style = MaterialTheme.typography.labelMedium,
+                color = sub,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Spacer(Modifier.height(14.dp))
+            LatencyChart(samples, slowMs)
+            if (wifi != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "接続先: ${wifi.ssid ?: if (wifi.tethering) "テザリング" else "Wi-Fi"}（${wifi.band}" +
+                        (wifi.channel?.let { " ・ ch$it" } ?: "") + " ・ ${wifi.freqMhz}MHz）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = sub,
+                )
+                if (gateway != null) {
+                    Text("宛先: $gateway", style = MaterialTheme.typography.bodySmall, color = sub)
+                }
+            }
+            val log = samples.filter { it.ok != null }.takeLast(6).reversed()
+            if (log.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text("直近のチェック", style = MaterialTheme.typography.labelMedium, color = sub)
+                Spacer(Modifier.height(4.dp))
+                log.forEach { s ->
+                    val result = if (s.ok == true) {
+                        "成功  " + (if (s.route == Route.WIFI) "ネット " else "応答 ") + "${s.latencyMs ?: "—"}ms" +
+                            (s.hopMs?.let { " ／ Wi-Fi ${it}ms" } ?: "")
+                    } else "失敗（応答なし）"
+                    Text(
+                        clock.format(Date(s.time)) + "  " + result,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = if (s.ok == true) sub else SignalColors.bad,
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** 通信量（受信・送信）。いまの速さ、1 時間の合計、推移のグラフ */

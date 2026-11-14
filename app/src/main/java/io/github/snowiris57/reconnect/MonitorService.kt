@@ -143,6 +143,7 @@ class MonitorService : Service() {
                         ok = c.probe?.ok ?: if (c.health == Health.BAD) false else null,
                         health = c.health,
                         route = c.route,
+                        hopMs = c.probe?.hopMs,
                     )
                 )
 

@@ -33,6 +33,8 @@ data class Sample(
     val ok: Boolean?,
     val health: Health,
     val route: Route = Route.MOBILE,
+    /** Wi-Fi 区間（スマホ ↔ ルーター）の応答。Wi-Fi のときだけ */
+    val hopMs: Long? = null,
 )
 
 enum class EventType { START, STOP, DETECT, RECOVER_START, STEP, RECOVER_OK, RECOVER_FAIL, ERROR, INFO }
@@ -92,7 +94,7 @@ object MonitorState {
 
     private fun parseSample(line: String): Sample? {
         val p = line.split('\t')
-        if (p.size != 6 && p.size != 7) return null
+        if (p.size !in 6..8) return null
         return Sample(
             time = p[0].toLongOrNull() ?: return null,
             rsrp = p[1].toIntOrNull(),
@@ -101,6 +103,7 @@ object MonitorState {
             ok = p[4].toBooleanStrictOrNull(),
             health = runCatching { Health.valueOf(p[5]) }.getOrNull() ?: return null,
             route = p.getOrNull(6)?.let { runCatching { Route.valueOf(it) }.getOrNull() } ?: Route.MOBILE,
+            hopMs = p.getOrNull(7)?.toLongOrNull(),
         )
     }
 
@@ -135,7 +138,7 @@ object MonitorState {
         val f = sampleFile ?: return
         try {
             f.writeText(samples.value.joinToString("\n", postfix = "\n") {
-                "${it.time}\t${it.rsrp ?: ""}\t${it.quality ?: ""}\t${it.latencyMs ?: ""}\t${it.ok ?: ""}\t${it.health}\t${it.route}"
+                "${it.time}\t${it.rsrp ?: ""}\t${it.quality ?: ""}\t${it.latencyMs ?: ""}\t${it.ok ?: ""}\t${it.health}\t${it.route}\t${it.hopMs ?: ""}"
             })
         } catch (_: Exception) {
         }
