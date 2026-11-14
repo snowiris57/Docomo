@@ -196,10 +196,12 @@ object NetCheck {
         } ?: return null
         if (info.rssi <= -127 || info.frequency <= 0) return null
         val standard = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            // Android が報告する規格（WifiInfo.getWifiStandard）。7 は 60GHz の 11ad なので出さない
             when (info.wifiStandard) {
                 4 -> "Wi-Fi 4"
                 5 -> "Wi-Fi 5"
-                6 -> "Wi-Fi 6"
+                // 6GHz 帯の 11ax は Wi-Fi 6E と呼ぶ
+                6 -> if (info.frequency >= 5925) "Wi-Fi 6E" else "Wi-Fi 6"
                 8 -> "Wi-Fi 7"
                 else -> null
             }
