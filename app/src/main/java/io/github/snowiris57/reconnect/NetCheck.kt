@@ -54,6 +54,26 @@ data class SignalInfo(
 /** いま使っている回線 */
 enum class Route { MOBILE, WIFI }
 
+/** Wi-Fi 7 の MLO のリンク 1 本 */
+data class MloInfo(val band: Int, val channel: Int, val active: Boolean, val mbps: Int) {
+    val bandName: String
+        get() = when (band) {
+            1 -> "2.4"
+            2 -> "5"
+            8 -> "6"
+            16 -> "60"
+            else -> "?"
+        }
+
+    fun describe(): String = "${bandName}GHz ch$channel ${if (active) "使用中" else "待機"}" + (if (mbps > 0) " ${mbps}Mbps" else "")
+
+    companion object {
+        /** 例: "5+6GHz" */
+        fun bands(links: List<MloInfo>): String =
+            links.sortedBy { it.band }.map { it.bandName }.distinct().joinToString("+") + "GHz"
+    }
+}
+
 /** Wi-Fi の状態（テザリングを含む） */
 data class WifiReading(
     val rssi: Int,
@@ -65,12 +85,14 @@ data class WifiReading(
     val ssid: String?,
     /** 従量制の Wi-Fi（iPhone などのテザリング）と判断できたか */
     val tethering: Boolean,
+    /** Wi-Fi 7 の MLO で複数の帯域を同時に使っているとき（例: "5+6GHz"） */
+    val mloBands: String? = null,
 ) {
     /** 0.0〜1.0。RSSI -90dBm → 0、-40dBm → 1 */
     val quality: Float get() = ((rssi + 90) / 50f).coerceIn(0f, 1f)
 
     val band: String
-        get() = when {
+        get() = mloBands ?: when {
             freqMhz < 3000 -> "2.4GHz"
             freqMhz < 5925 -> "5GHz"
             else -> "6GHz"
@@ -195,28 +217,75 @@ object NetCheck {
             null
         } ?: return null
         if (info.rssi <= -127 || info.frequency <= 0) return null
-        val standard = if (android.os.Build.VERSION.SDK_INT >= 30) {
-            // Android が報告する規格（WifiInfo.getWifiStandard）。7 は 60GHz の 11ad なので出さない
-            when (info.wifiStandard) {
-                4 -> "Wi-Fi 4"
-                5 -> "Wi-Fi 5"
-                // 6GHz 帯の 11ax は Wi-Fi 6E と呼ぶ
-                6 -> if (info.frequency >= 5925) "Wi-Fi 6E" else "Wi-Fi 6"
-                8 -> "Wi-Fi 7"
-                else -> null
-            }
-        } else null
-        val ssid = info.ssid?.removeSurrounding("\"")?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
         val caps = cm.getNetworkCapabilities(net)
+        // 接続中の回線そのものの情報。古い connectionInfo と規格がずれる機種があるので両方見る
+        val netInfo = if (android.os.Build.VERSION.SDK_INT >= 31) caps?.transportInfo as? android.net.wifi.WifiInfo else null
+        val code = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            maxOf(info.wifiStandard, netInfo?.wifiStandard ?: 0)
+        } else 0
+        val mlo = mloLinks(info, netInfo)
+        // Wi-Fi 7 の MLO で 2 本以上つながっていれば Wi-Fi 7（規格の番号が 6 のままの機種がある）
+        val isMlo = mlo.size >= 2
+        // Android が報告する規格（WifiInfo.getWifiStandard）。7 は 60GHz の 11ad なので出さない
+        val standard = when {
+            code == 8 || isMlo -> "Wi-Fi 7"
+            code == 6 -> if (info.frequency >= 5925) "Wi-Fi 6E" else "Wi-Fi 6" // 6GHz 帯の 11ax は 6E
+            code == 5 -> "Wi-Fi 5"
+            code == 4 -> "Wi-Fi 4"
+            else -> null
+        }
+        logWifiDiag(code, info, netInfo, mlo)
+        val ssid = info.ssid?.removeSurrounding("\"")?.takeIf { it.isNotBlank() && it != "<unknown ssid>" }
         val metered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
         return WifiReading(
             rssi = info.rssi,
-            linkMbps = info.linkSpeed.takeIf { it > 0 },
+            // MLO では各リンクの速さの合計（取れなければ従来の値）
+            linkMbps = (if (isMlo) mlo.sumOf { it.mbps }.takeIf { it > 0 } else null) ?: info.linkSpeed.takeIf { it > 0 },
             freqMhz = info.frequency,
             standard = standard,
+            mloBands = if (isMlo) MloInfo.bands(mlo) else null,
             ssid = rememberSsid(ctx, net, ssid),
             tethering = metered,
         )
+    }
+
+    /** Wi-Fi 7 の MLO で同時につながっているリンク（Android 14 以降）。取れなければ空 */
+    private fun mloLinks(vararg infos: android.net.wifi.WifiInfo?): List<MloInfo> {
+        if (android.os.Build.VERSION.SDK_INT < 34) return emptyList()
+        return infos.filterNotNull()
+            .map { i ->
+                runCatching { i.associatedMloLinks }.getOrDefault(emptyList())
+                    .filter { it.state == android.net.wifi.MloLink.MLO_LINK_STATE_ACTIVE || it.state == android.net.wifi.MloLink.MLO_LINK_STATE_IDLE }
+                    .map { l ->
+                        MloInfo(
+                            band = l.band,
+                            channel = l.channel,
+                            active = l.state == android.net.wifi.MloLink.MLO_LINK_STATE_ACTIVE,
+                            mbps = maxOf(l.rxLinkSpeedMbps, l.txLinkSpeedMbps, 0),
+                        )
+                    }
+            }
+            .maxByOrNull { it.size } ?: emptyList()
+    }
+
+    private var lastDiag: String? = null
+
+    /** 規格の生の値を、変わったときだけ履歴に残す（実機での確認用） */
+    private fun logWifiDiag(code: Int, info: android.net.wifi.WifiInfo, netInfo: android.net.wifi.WifiInfo?, mlo: List<MloInfo>) {
+        val d = buildString {
+            append("Wi-Fi の規格: 番号 ").append(code)
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                append("（connectionInfo ").append(info.wifiStandard)
+                netInfo?.let { append("・回線 ").append(it.wifiStandard) }
+                append("）")
+            }
+            append("・").append(info.frequency).append("MHz")
+            append("・MLO ")
+            if (mlo.isEmpty()) append("なし") else append(mlo.joinToString(" / ") { it.describe() })
+        }
+        if (d == lastDiag) return
+        lastDiag = d
+        MonitorState.event(EventType.INFO, d)
     }
 
     /**

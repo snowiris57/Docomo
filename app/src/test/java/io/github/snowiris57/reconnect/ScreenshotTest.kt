@@ -247,6 +247,18 @@ class ScreenshotTest {
         R.layout.widget_meter,
         mobileSnap.copy(health = Health.PAUSED, probe = null, pausedReason = "モバイルデータがオフ"), 150, 150,
     )
+    /** Wi-Fi 7 の MLO（5GHz と 6GHz を同時に使用） */
+    @Test fun widget_wide_wifi7() = widget(
+        R.layout.widget_wide,
+        wifiSnap.copy(
+            wifi = WifiReading(
+                rssi = -35, linkMbps = 2882, freqMhz = 5975, standard = "Wi-Fi 7", ssid = "Buffalo-DA60-WPA3",
+                tethering = false, mloBands = "5+6GHz",
+            ),
+            probe = ProbeResult(true, 19, hopMs = 16),
+        ),
+        320, 150,
+    )
     @Test fun widget_small() = widget(R.layout.widget_small, wifiSnap, 110, 110)
     @Test fun widget_wide_wifi() = widget(R.layout.widget_wide, wifiSnap, 320, 150)
     @Test fun widget_wide_mobile() = widget(R.layout.widget_wide, mobileSnap.copy(health = Health.BAD, probe = ProbeResult(false, 0)), 320, 150)
